@@ -381,7 +381,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const initialTitleElementRef = React.useRef<CanvasElement | null>(null);
   if (!initialTitleElementRef.current) {
     initialTitleElementRef.current = createDesignTitleElement(
-      "A New Design",
+      "",
       safeInitialSize,
     );
   }
@@ -418,7 +418,9 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const clearTextEditRequest = useTextEditStore((state) => state.clearTextEditRequest);
 
-  const [elements, setElements] = React.useState<CanvasElement[]>(() => []);
+  const [elements, setElements] = React.useState<CanvasElement[]>(() => [
+    // normalizeLayer(initialTitleElementRef.current!, 0),
+  ]);
   const [elementPreviewById, setElementPreviewById] = React.useState<Record<string, Partial<CanvasElement>>>({});
   const [history, setHistory] = React.useState<HistoryEntry[]>([
     {

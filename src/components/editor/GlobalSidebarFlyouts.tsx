@@ -58,7 +58,7 @@ const DrawToolButton: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className={`flex h-11 items-center justify-center rounded-xl border text-[12px] font-medium transition ${
+    className={`flex h-11 items-center justify-center rounded-xl border w-full text-[12px] font-medium transition ${
       active
         ? "border-[#90cdf4] bg-[#ebf8ff] text-[#7650e3]"
         : "border-[#E2E8F0] bg-white text-[#4A5568] hover:bg-[#f8fbfd]"
@@ -75,7 +75,7 @@ const DrawBrushPreview: React.FC<{
   preview: React.ReactNode;
   onClick: () => void;
 }> = ({ active, label, preview, onClick }) => (
-  <button type="button" onClick={onClick} className="flex flex-col items-center gap-1.5 text-center">
+  <button type="button" onClick={onClick} className="flex flex-col items-center gap-1.5 w-full text-center">
     <div
       className={`flex h-[42px] w-full items-center justify-center rounded-md border transition ${
         active
@@ -267,19 +267,21 @@ export const DrawFlyout: React.FC<{
   };
 
   return (
-    <div className="-m-4 flex min-h-[560px] flex-col bg-[#fbfbfc]">
+    <div className="flex max-h-[85vh] flex-col overflow-hidden bg-[#fbfbfc]">
       <div className="border-b border-[#DDE3EA] px-5 py-4 text-center text-[22px] font-semibold tracking-[-0.02em] text-[#3f4a5f]">
         Draw
       </div>
 
-      <div className="flex-1 px-5 py-6">
-        <div className="space-y-6">
-          <div className="space-y-2">
+      <div className="flex-1 overflow-y-auto px-5 py-6 w-full">
+        <div className="space-y-6 w-full">
+          <div className="space-y-2 w-full">
             <DrawToolButton active={tool === "eraser"} icon={<Eraser size={16} />} label="" onClick={() => selectTool("eraser")} />
             <div className="text-center text-[13px] font-medium text-[#7c8496]">Eraser</div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3 px-0.5">
+            <div className=" w-full">
+
             <DrawBrushPreview
               active={tool === "pencil"}
               label="Pencil"
@@ -290,6 +292,7 @@ export const DrawFlyout: React.FC<{
                 </svg>
               }
             />
+            </div>
             <DrawBrushPreview
               active={tool === "circle"}
               label="Circle"
@@ -380,7 +383,7 @@ export const DrawFlyout: React.FC<{
         </div>
       </div>
 
-      <div className="border-t border-[#E1E6ED] bg-white px-5 py-4">
+      <div className="shrink-0 border-t border-[#E1E6ED] bg-white px-5 py-4">
         <button
           type="button"
           onClick={finishDrawing}

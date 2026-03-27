@@ -336,7 +336,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
         />
       </Section>
 
-      <Section title="Animation">
+      {/* <Section title="Animation">
         <div className="grid grid-cols-2 gap-2">
           {[
             { key: "start", label: "Start" },
@@ -357,7 +357,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
             </button>
           ))}
         </div>
-      </Section>
+      </Section> */}
 
       <Section title="Image Actions">
         <div className="space-y-2 text-[12px] text-[#4b5563]">
@@ -369,13 +369,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
             <ImagePlus size={14} className="text-[#6b7280]" />
             <span>Replace</span>
           </button>
-          <button type="button" className="flex w-full items-center justify-between rounded-md px-1 py-1.5 hover:bg-[#f7f9fb]" onClick={handleAiBackground}>
-            <span className="flex items-center gap-2">
-              <Sparkles size={14} className="text-[#6b7280]" />
-              <span>{isAiProcessing ? "Please wait..." : "AI Background..."}</span>
-            </span>
-            <Crown size={12} className="text-[#f4b63d]" />
-          </button>
+     
           <button type="button" className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 hover:bg-[#f7f9fb]" onClick={() => updateImage({ maskShape: selectedImage.maskShape === "circle" ? "none" : "circle" })}>
             <Scissors size={14} className="text-[#6b7280]" />
             <span>Mask</span>
@@ -555,16 +549,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
               className="h-9 w-full rounded-[3px] border border-[#d7dce3] bg-white pl-9 pr-3 text-[12px] text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
             />
           </div>
-          <div className="space-y-1 bg-[#f6f7f9] px-2 py-2 text-[11px] text-[#2aa4eb]">
-            <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
-              <span className="text-[#5dc0f4]">✓</span>
-              Download as PDF
-            </button>
-            <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
-              <span className="text-[#5dc0f4]">✓</span>
-              Publish as Webpage
-            </button>
-          </div>
+   
         </div>
       </Section>
     </div>
