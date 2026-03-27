@@ -8,6 +8,8 @@ import React, {
 import { ZoomIn, ZoomOut } from "lucide-react";
 import Konva from "konva";
 import type { CanvasElement } from "./EditorShell";
+import { LayerEffectOverlay } from "./LayerEffectOverlay";
+import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
 
 const konvaWithTextFix = Konva as typeof Konva & {
   _fixTextRendering?: boolean;
@@ -41,9 +43,11 @@ type InlineEditorState = {
   rotation: number;
   fontFamily: string;
   fontWeight: string;
+  fontStyle: "normal" | "italic";
   color: string;
   lineHeight: number;
-  textAlign: "left" | "center" | "right";
+  textAlign: "left" | "center" | "right" | "justify";
+  textTransform: "none" | "uppercase";
 };
 
 type ParsedLinearGradient = {
@@ -224,8 +228,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     null,
   );
   const [editingText, setEditingText] = useState("");
+  const [pulseProgress, setPulseProgress] = useState(0);
 
   const scale = zoom / 100;
+  const pulseFrequency =
+    elements
+      .filter((element) => element.visible !== false)
+      .filter((element) => element.effectProps?.preset === "pulse")
+      .reduce((max, element) => Math.max(max, element.effectProps?.pulseSpeed ?? 1), 1) || 1;
 
   const clearAlignmentGuides = useCallback(() => {
     const guideLayer = guideLayerRef.current;
@@ -303,9 +313,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         rotation: node.rotation() || 0,
         fontFamily: element.fontFamily || "sans-serif",
         fontWeight: element.fontWeight || "normal",
+        fontStyle: element.fontStyle || "normal",
         color: element.color || "#000000",
         lineHeight: element.lineHeight || 1.2,
         textAlign: element.textAlign || "left",
+        textTransform: element.textTransform || "none",
       };
     },
     [scale],
@@ -405,6 +417,25 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   useEffect(() => {
     editingTextRef.current = editingText;
   }, [editingText]);
+
+  useEffect(() => {
+    let frameId = 0;
+    let start = performance.now();
+
+    const tick = (timestamp: number) => {
+      const elapsed = (timestamp - start) / 1000;
+      const normalized = (Math.sin(elapsed * Math.PI * 2 * pulseFrequency) + 1) / 2;
+      setPulseProgress(normalized);
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      start = 0;
+    };
+  }, [pulseFrequency]);
 
   useEffect(() => {
     closeInlineEditingRef.current = closeInlineEditing;
@@ -917,6 +948,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
               overflow: "hidden",
               background: wrapperBackground,
               touchAction: "none",
+              willChange: "transform, filter",
+              transform: "translateZ(0)",
             }}
           >
             {gridEnabled && (
@@ -970,7 +1003,17 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                 height: canvasSize.height * scale,
                 overflow: "hidden",
                 touchAction: "none",
+                willChange: "transform, filter",
+                transform: "translateZ(0)",
               }}
+            />
+
+            <LayerEffectOverlay
+              elements={elements}
+              scale={scale}
+              editingLayerId={inlineEditor?.id}
+              pulseProgress={pulseProgress}
+              isMobile={isMobileViewport}
             />
 
             {inlineEditor && (
@@ -991,9 +1034,11 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                   fontSize: `${inlineEditor.fontSize * scale}px`,
                   fontFamily: inlineEditor.fontFamily,
                   fontWeight: inlineEditor.fontWeight,
+                  fontStyle: inlineEditor.fontStyle,
                   color: inlineEditor.color,
                   lineHeight: String(inlineEditor.lineHeight),
                   textAlign: inlineEditor.textAlign,
+                  textTransform: inlineEditor.textTransform,
                   background: "transparent",
                   border: "none",
                   borderRadius: 0,
@@ -1040,12 +1085,20 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 function createKonvaShape(element: CanvasElement): Konva.Node | null {
   try {
     const renderable = getRenderableLayer(element);
+    const useDomOverlay = shouldUseDomEffectOverlay(element);
+    const textContent =
+      renderable.type === "text" && renderable.textTransform === "uppercase"
+        ? (renderable.content || "").toUpperCase()
+        : renderable.content || "";
     const baseConfig = {
       id: renderable.id,
       x: renderable.x,
       y: renderable.y,
       rotation: renderable.rotation || 0,
-      opacity: renderable.opacity != null ? renderable.opacity / 100 : 1,
+      opacity:
+        renderable.opacity != null
+          ? (useDomOverlay ? 0.01 : renderable.opacity / 100)
+          : 1,
       scaleX: renderable.scale ?? 1,
       scaleY: renderable.scale ?? 1,
       draggable: true,
@@ -1056,15 +1109,19 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
         ...baseConfig,
         width: renderable.width,
         height: renderable.height,
-        text: renderable.content || "",
+        text: textContent,
         fontSize: renderable.fontSize || 24,
         fontFamily: renderable.fontFamily || "sans-serif",
-        fontStyle: mapFontWeightToKonvaFontStyle(renderable.fontWeight),
+        fontStyle: mapFontStyleToKonva(renderable.fontWeight, renderable.fontStyle),
         fill: renderable.color || "#000000",
         align: renderable.textAlign || "center",
-        verticalAlign: "middle",
+        verticalAlign: renderable.textVerticalAlign || "middle",
         lineHeight: renderable.lineHeight || 1.2,
         letterSpacing: renderable.letterSpacing || 0,
+        textDecoration:
+          renderable.textDecoration && renderable.textDecoration !== "none"
+            ? renderable.textDecoration
+            : undefined,
         wrap: "word",
       });
     }
@@ -1521,19 +1578,27 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function mapFontWeightToKonvaFontStyle(fontWeight?: string): string {
-  if (!fontWeight) return "normal";
+function mapFontStyleToKonva(
+  fontWeight?: string,
+  fontStyle?: "normal" | "italic",
+): string {
+  const isItalic = fontStyle === "italic";
+  if (!fontWeight) return isItalic ? "italic" : "normal";
 
   const value = String(fontWeight).toLowerCase();
 
-  if (value === "bold") return "bold";
+  if (value === "bold") return isItalic ? "bold italic" : "bold";
   if (value === "italic") return "italic";
   if (value === "bold italic") return "bold italic";
 
   const numeric = Number(value);
   if (!Number.isNaN(numeric)) {
-    return numeric >= 600 ? "bold" : "normal";
+    if (numeric >= 600) {
+      return isItalic ? "bold italic" : "bold";
+    }
+
+    return isItalic ? "italic" : "normal";
   }
 
-  return "normal";
+  return isItalic ? "italic" : "normal";
 }

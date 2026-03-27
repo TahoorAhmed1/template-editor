@@ -46,6 +46,36 @@ export interface LayerAnimationProps {
   end: LayerAnimationState;
 }
 
+export type BlendModeOption =
+  | "normal"
+  | "screen"
+  | "multiply"
+  | "overlay";
+
+export type LayerEffectPreset =
+  | "none"
+  | "neon-glow"
+  | "drop-shadow"
+  | "glassmorphism"
+  | "pulse";
+
+export interface LayerEffectProps {
+  preset: LayerEffectPreset;
+  glowColor: string;
+  glowIntensity: number;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  shadowOpacity: number;
+  glassBlur: number;
+  glassOpacity: number;
+  strokeColor: string;
+  strokeWidth: number;
+  blendMode: BlendModeOption;
+  pulseSpeed: number;
+}
+
 export interface CanvasElement {
   id: string;
   role?: "design-title";
@@ -59,8 +89,10 @@ export interface CanvasElement {
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
+  fontStyle?: "normal" | "italic";
   color?: string;
   backgroundColor?: string;
+  textBackgroundColor?: string;
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
@@ -70,7 +102,14 @@ export interface CanvasElement {
   visible?: boolean;
   zIndex?: number;
   animationProps?: LayerAnimationProps;
-  textAlign?: "left" | "center" | "right";
+  effectProps?: LayerEffectProps;
+  textAlign?: "left" | "center" | "right" | "justify";
+  textVerticalAlign?: "top" | "middle" | "bottom";
+  textDecoration?: "none" | "underline";
+  textTransform?: "none" | "uppercase";
+  linkUrl?: string;
+  listStyle?: "none" | "bulleted" | "numbered";
+  listPosition?: "outside" | "inside";
   lineHeight?: number;
   letterSpacing?: number;
   shapeType?: "rectangle" | "circle" | "triangle" | "line";
@@ -78,10 +117,17 @@ export interface CanvasElement {
   startTime?: number;
   brightness?: number;
   contrast?: number;
+  vibrance?: number;
   saturation?: number;
   hueRotate?: number;
   blur?: number;
   invert?: number;
+  blackAndWhite?: boolean;
+  sepiaEnabled?: boolean;
+  removeColorEnabled?: boolean;
+  tintEnabled?: boolean;
+  gammaEnabled?: boolean;
+  roundnessEnabled?: boolean;
   maskShape?: "none" | "circle" | "rounded" | "triangle" | "star" | "heart";
   animation?: {
     type: "bounce" | "slide" | "fade" | "scale" | "rotate";
@@ -124,8 +170,12 @@ const createDesignTitleElement = (
     fontSize: Math.max(32, Math.round(Math.min(size.width, size.height) * 0.075)),
     fontFamily: "'Georgia', serif",
     fontWeight: "700",
+    fontStyle: "normal",
     color: "#123a63",
     textAlign: "center",
+    textVerticalAlign: "middle",
+    textDecoration: "none",
+    textTransform: "none",
     lineHeight: 1.05,
     animationProps: {
       activePhase: "end",
@@ -141,6 +191,23 @@ const createDefaultAnimationProps = (): LayerAnimationProps => ({
   end: { opacity: 1, x: 0, y: 0, scale: 1, rotation: 0 },
 });
 
+const createDefaultEffectProps = (): LayerEffectProps => ({
+  preset: "none",
+  glowColor: "#38bdf8",
+  glowIntensity: 18,
+  shadowColor: "#0f172a",
+  shadowBlur: 18,
+  shadowOffsetX: 0,
+  shadowOffsetY: 10,
+  shadowOpacity: 0.28,
+  glassBlur: 18,
+  glassOpacity: 0.18,
+  strokeColor: "#ffffff",
+  strokeWidth: 0,
+  blendMode: "normal",
+  pulseSpeed: 1,
+});
+
 const normalizeLayer = (
   layer: CanvasElement,
   fallbackZIndex: number,
@@ -150,6 +217,7 @@ const normalizeLayer = (
   visible: true,
   zIndex: fallbackZIndex,
   animationProps: createDefaultAnimationProps(),
+  effectProps: createDefaultEffectProps(),
   ...layer,
   scale: layer.scale ?? 1,
   opacity: layer.opacity ?? 100,
@@ -166,6 +234,10 @@ const normalizeLayer = (
       ...createDefaultAnimationProps().end,
       ...(layer.animationProps?.end ?? {}),
     },
+  },
+  effectProps: {
+    ...createDefaultEffectProps(),
+    ...(layer.effectProps ?? {}),
   },
 });
 

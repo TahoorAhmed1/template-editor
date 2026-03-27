@@ -5,6 +5,8 @@ import {
   FlipHorizontal, FlipVertical, Bold, Italic, Underline,
 } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset, EditorMode } from "./EditorShell";
+import { ImageAdjustmentSidebar } from "./ImageAdjustmentSidebar";
+import { TextPropertiesSidebar } from "./TextPropertiesSidebar";
 
 interface InspectorProps {
   selectedElement: CanvasElement | null;
@@ -59,7 +61,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         <h2 className="text-sm font-semibold text-foreground">
           {selectedElement
             ? selectedElement.type === "text"
-              ? "Text"
+              ? "Properties"
               : selectedElement.type === "shape"
               ? "Shape"
               : selectedElement.type === "video"
@@ -298,6 +300,37 @@ const FONT_OPTIONS = [
 ];
 
 export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer }) => {
+  if (element.type === "text") {
+    return (
+      <TextPropertiesSidebar
+        selectedText={element}
+        onUpdate={(id, newProps) => {
+          if (id === element.id) {
+            onUpdate(newProps);
+          }
+        }}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
+      />
+    );
+  }
+
+  if (element.type === "image") {
+    return (
+      <ImageAdjustmentSidebar
+        selectedImage={element}
+        onUpdate={(id, newProps) => {
+          if (id === element.id) {
+            onUpdate(newProps);
+          }
+        }}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
+        onMoveLayer={onMoveLayer}
+      />
+    );
+  }
+
   const activePhase = element.animationProps?.activePhase ?? "end";
   const activeAnimation = element.animationProps?.[activePhase] ?? {
     opacity: 1,
@@ -305,6 +338,22 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
     y: 0,
     scale: 1,
     rotation: 0,
+  };
+  const effect = element.effectProps ?? {
+    preset: "none",
+    glowColor: "#38bdf8",
+    glowIntensity: 18,
+    shadowColor: "#0f172a",
+    shadowBlur: 18,
+    shadowOffsetX: 0,
+    shadowOffsetY: 10,
+    shadowOpacity: 0.28,
+    glassBlur: 18,
+    glassOpacity: 0.18,
+    strokeColor: "#ffffff",
+    strokeWidth: 0,
+    blendMode: "normal",
+    pulseSpeed: 1,
   };
 
   const updateAnimationPhase = (phase: "start" | "end") => {
@@ -342,6 +391,15 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
           ...(element.animationProps?.end ?? {}),
           ...(activePhase === "end" ? { [key]: value } : {}),
         },
+      },
+    });
+  };
+
+  const updateEffect = (updates: Partial<typeof effect>) => {
+    onUpdate({
+      effectProps: {
+        ...effect,
+        ...updates,
       },
     });
   };
@@ -574,6 +632,182 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
               <option value="heart">Heart</option>
             </select>
           </Row>
+          <Row label="Blend Mode">
+            <select
+              value={effect.blendMode}
+              onChange={(e) => updateEffect({ blendMode: e.target.value as typeof effect.blendMode })}
+              className="h-7 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              <option value="normal">Normal</option>
+              <option value="screen">Screen</option>
+              <option value="multiply">Multiply</option>
+              <option value="overlay">Overlay</option>
+            </select>
+          </Row>
+        </div>
+      </Section>
+    )}
+
+    {(element.type === "text" || element.type === "image") && (
+      <Section title="Effect Style">
+        <div className="space-y-2.5">
+          <Row label="Preset">
+            <select
+              value={effect.preset}
+              onChange={(e) => updateEffect({ preset: e.target.value as typeof effect.preset })}
+              className="h-7 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              <option value="none">None</option>
+              <option value="neon-glow">Neon Glow</option>
+              <option value="drop-shadow">Drop Shadow</option>
+              <option value="glassmorphism">Glassmorphism</option>
+              <option value="pulse">Pulse</option>
+            </select>
+          </Row>
+
+          <Row label="Glow Color">
+            <input
+              type="color"
+              value={effect.glowColor}
+              onChange={(e) => updateEffect({ glowColor: e.target.value })}
+              className="w-7 h-7 rounded border border-editor-inspector-border cursor-pointer"
+            />
+          </Row>
+
+          <Row label="Glow Intensity">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min="0"
+                max="48"
+                value={effect.glowIntensity}
+                onChange={(e) => updateEffect({ glowIntensity: Number(e.target.value) })}
+                className="w-16 h-1 accent-primary"
+              />
+              <input
+                type="number"
+                min="0"
+                max="48"
+                value={effect.glowIntensity}
+                onChange={(e) => updateEffect({ glowIntensity: Number(e.target.value) })}
+                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </Row>
+
+          <Row label="Shadow Blur">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min="0"
+                max="48"
+                value={effect.shadowBlur}
+                onChange={(e) => updateEffect({ shadowBlur: Number(e.target.value) })}
+                className="w-16 h-1 accent-primary"
+              />
+              <input
+                type="number"
+                min="0"
+                max="48"
+                value={effect.shadowBlur}
+                onChange={(e) => updateEffect({ shadowBlur: Number(e.target.value) })}
+                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </Row>
+
+          <Row label="Shadow Color">
+            <input
+              type="color"
+              value={effect.shadowColor}
+              onChange={(e) => updateEffect({ shadowColor: e.target.value })}
+              className="w-7 h-7 rounded border border-editor-inspector-border cursor-pointer"
+            />
+          </Row>
+
+          {element.type === "text" && (
+            <Row label="Stroke Width">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="range"
+                  min="0"
+                  max="8"
+                  step="0.5"
+                  value={effect.strokeWidth}
+                  onChange={(e) => updateEffect({ strokeWidth: Number(e.target.value) })}
+                  className="w-16 h-1 accent-primary"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="8"
+                  step="0.5"
+                  value={effect.strokeWidth}
+                  onChange={(e) => updateEffect({ strokeWidth: Number(e.target.value) })}
+                  className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+            </Row>
+          )}
+
+          {element.type === "text" && (
+            <Row label="Stroke Color">
+              <input
+                type="color"
+                value={effect.strokeColor}
+                onChange={(e) => updateEffect({ strokeColor: e.target.value })}
+                className="w-7 h-7 rounded border border-editor-inspector-border cursor-pointer"
+              />
+            </Row>
+          )}
+
+          {effect.preset === "glassmorphism" && (
+            <Row label="Glass Blur">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="range"
+                  min="4"
+                  max="32"
+                  value={effect.glassBlur}
+                  onChange={(e) => updateEffect({ glassBlur: Number(e.target.value) })}
+                  className="w-16 h-1 accent-primary"
+                />
+                <input
+                  type="number"
+                  min="4"
+                  max="32"
+                  value={effect.glassBlur}
+                  onChange={(e) => updateEffect({ glassBlur: Number(e.target.value) })}
+                  className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+            </Row>
+          )}
+
+          {effect.preset === "pulse" && (
+            <Row label="Pulse Speed">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={effect.pulseSpeed}
+                  onChange={(e) => updateEffect({ pulseSpeed: Number(e.target.value) })}
+                  className="w-16 h-1 accent-primary"
+                />
+                <input
+                  type="number"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={effect.pulseSpeed}
+                  onChange={(e) => updateEffect({ pulseSpeed: Number(e.target.value) })}
+                  className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+              </div>
+            </Row>
+          )}
         </div>
       </Section>
     )}
@@ -861,7 +1095,7 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
     </Section>
 
     {/* Effects - all types */}
-    <Section title="Effects">
+    <Section title="Transform">
       <div className="space-y-2.5">
         <Row label="Opacity">
           <div className="flex items-center gap-1.5">
