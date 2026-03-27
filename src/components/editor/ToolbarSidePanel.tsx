@@ -28,7 +28,14 @@ import {
   Captions,
   List,
 } from "lucide-react";
-import type { ToolType, CanvasElement, EditorMode, CanvasSizePreset } from "./EditorShell";
+import type { ToolType, CanvasElement, EditorMode, CanvasSizePreset, DrawSettings } from "./EditorShell";
+import {
+  BackgroundFlyout,
+  DrawFlyout,
+  LayoutFlyout,
+  RecordFlyout,
+  SlideshowFlyout,
+} from "./GlobalSidebarFlyouts";
 
 interface ToolbarSidePanelProps {
   activeTool: ToolType;
@@ -37,6 +44,9 @@ interface ToolbarSidePanelProps {
   canvasBackground: string;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
+  drawSettings?: DrawSettings;
+  onUpdateDrawSettings?: (updates: Partial<DrawSettings>) => void;
+  onFinishDrawing?: () => void;
 }
 
 export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
@@ -46,6 +56,9 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
   canvasBackground,
   mode,
   onCanvasSizeChange,
+  drawSettings,
+  onUpdateDrawSettings,
+  onFinishDrawing,
 }) => {
   switch (activeTool) {
     case "templates":
@@ -57,24 +70,26 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
     case "uploads":
       return <UploadsPanel onAddElement={onAddElement} mode={mode} />;
     case "background":
-      return (
-        <BackgroundPanel
-          onBackgroundChange={onBackgroundChange}
-          canvasBackground={canvasBackground}
-        />
-      );
+      return <BackgroundFlyout onBackgroundChange={onBackgroundChange} onAddElement={onAddElement} />;
     case "ai":
       return <AIPanel onAddElement={onAddElement} />;
     case "draw":
-      return <DrawPanel onAddElement={onAddElement} />;
+      return (
+        <DrawFlyout
+          onAddElement={onAddElement}
+          settings={drawSettings}
+          onSettingsChange={onUpdateDrawSettings}
+          onFinishDrawing={onFinishDrawing}
+        />
+      );
     case "layout":
-      return <LayoutPanel mode={mode} onCanvasSizeChange={onCanvasSizeChange} />;
+      return <LayoutFlyout onAddElement={onAddElement} />;
     case "table":
       return <TablePanel onAddElement={onAddElement} />;
     case "record":
-      return <RecordPanel />;
+      return <RecordFlyout />;
     case "slideshow":
-      return <SlideshowPanel />;
+      return <SlideshowFlyout onAddElement={onAddElement} />;
     case "qrcode":
       return <QRCodePanel onAddElement={onAddElement} />;
     default:
@@ -420,17 +435,38 @@ const UploadsPanel: React.FC<{
   mode: EditorMode;
 }> = ({ onAddElement, mode }) => {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploads, setUploads] = useState<string[]>([]);
+  const [uploads, setUploads] = useState<Array<{ src: string; kind: "image" | "video" }>>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
     Array.from(files).forEach((file) => {
+      if (file.type.startsWith("video/")) {
+        const objectUrl = URL.createObjectURL(file);
+        setUploads((prev) => [{ src: objectUrl, kind: "video" }, ...prev]);
+
+        const probeVideo = document.createElement("video");
+        probeVideo.preload = "metadata";
+        probeVideo.src = objectUrl;
+        probeVideo.addEventListener(
+          "loadedmetadata",
+          () => {
+            const maxW = 500;
+            const ratio = (probeVideo.videoWidth || 16) / Math.max(1, probeVideo.videoHeight || 9);
+            const w = Math.min(probeVideo.videoWidth || maxW, maxW);
+            const h = w / ratio;
+            onAddElement({ type: "video", x: 100, y: 100, width: w, height: h, src: objectUrl, duration: Math.round(probeVideo.duration || 0) });
+          },
+          { once: true },
+        );
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
-        setUploads((prev) => [dataUrl, ...prev]);
+        setUploads((prev) => [{ src: dataUrl, kind: "image" }, ...prev]);
 
         const img = new window.Image();
         img.onload = () => {
@@ -451,7 +487,7 @@ const UploadsPanel: React.FC<{
       <input
         ref={fileRef}
         type="file"
-        accept={mode === "video" ? "image/*,video/*" : "image/*"}
+        accept="image/*,video/*"
         className="hidden"
         onChange={handleFileChange}
         multiple
@@ -470,23 +506,45 @@ const UploadsPanel: React.FC<{
         <div>
           <SectionTitle>Your uploads</SectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            {uploads.map((src, i) => (
+            {uploads.map((upload, i) => (
               <button
                 key={i}
                 className="aspect-[4/3] overflow-hidden rounded-xl border border-[#e3e7ed] bg-white"
                 onClick={() => {
+                  if (upload.kind === "video") {
+                    const probeVideo = document.createElement("video");
+                    probeVideo.preload = "metadata";
+                    probeVideo.src = upload.src;
+                    probeVideo.addEventListener(
+                      "loadedmetadata",
+                      () => {
+                        const maxW = 500;
+                        const ratio = (probeVideo.videoWidth || 16) / Math.max(1, probeVideo.videoHeight || 9);
+                        const w = Math.min(probeVideo.videoWidth || maxW, maxW);
+                        const h = w / ratio;
+                        onAddElement({ type: "video", x: 100, y: 100, width: w, height: h, src: upload.src, duration: Math.round(probeVideo.duration || 0) });
+                      },
+                      { once: true },
+                    );
+                    return;
+                  }
+
                   const img = new window.Image();
                   img.onload = () => {
                     const maxW = 500;
                     const ratio = img.width / img.height;
                     const w = Math.min(img.width, maxW);
                     const h = w / ratio;
-                    onAddElement({ type: "image", x: 100, y: 100, width: w, height: h, src });
+                    onAddElement({ type: "image", x: 100, y: 100, width: w, height: h, src: upload.src });
                   };
-                  img.src = src;
+                  img.src = upload.src;
                 }}
               >
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                {upload.kind === "video" ? (
+                  <video src={upload.src} className="h-full w-full object-cover" muted playsInline />
+                ) : (
+                  <img src={upload.src} alt="" className="h-full w-full object-cover" />
+                )}
               </button>
             ))}
           </div>

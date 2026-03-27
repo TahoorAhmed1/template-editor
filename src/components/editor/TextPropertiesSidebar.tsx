@@ -17,12 +17,14 @@ import {
   Type,
 } from "lucide-react";
 import type { CanvasElement, LayerEffectProps } from "./EditorShell";
+import { useTextEditStore } from "@/stores/useTextEditStore";
 
 interface TextPropertiesSidebarProps {
   selectedText: CanvasElement;
   onUpdate: (id: string, newProps: Partial<CanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onStartCanvasEdit?: (id: string) => void;
 }
 
 const FONT_OPTIONS = [
@@ -214,10 +216,12 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   onUpdate,
   onDuplicate,
   onDelete,
+  onStartCanvasEdit,
 }) => {
   const positionSectionRef = React.useRef<HTMLDivElement>(null);
   const [fontSearch, setFontSearch] = React.useState("");
   const [fontMenuOpen, setFontMenuOpen] = React.useState(false);
+  const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const effect = normalizeEffectProps(selectedText);
   const lineHeightUi = Math.round((selectedText.lineHeight ?? 1.2) * 100);
   const shadowMode =
@@ -235,6 +239,10 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
 
   const updateText = (updates: Partial<CanvasElement>) => {
     onUpdate(selectedText.id, updates);
+  };
+
+  const startCanvasEdit = () => {
+    requestTextEdit(selectedText.id);
   };
 
   const updateEffect = (updates: Partial<LayerEffectProps>) => {
@@ -285,7 +293,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
 
   return (
     <div className="bg-white px-3 pb-5 pt-2 text-[#1f2937]">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <ActionButton
           icon={<Move size={13} />}
           label="Position"
@@ -301,6 +309,11 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           label="Duplicate"
           onClick={onDuplicate}
         />
+        <ActionButton
+          icon={<Type size={13} />}
+          label="Edit"
+          onClick={startCanvasEdit}
+        />
         <ActionButton label="Copy Style" onClick={handleCopyStyle} />
         <ActionButton
           icon={<Trash2 size={13} />}
@@ -310,7 +323,25 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
         />
       </div>
 
-      <Section title="Opacity" divider={false}>
+      <Section title="Text" divider={false}>
+        <div className="space-y-2">
+          <textarea
+            value={selectedText.content || ""}
+            onChange={(event) => updateText({ content: event.target.value })}
+            placeholder="Type your text"
+            className="min-h-[120px] w-full resize-y rounded-[3px] border border-[#d7dce3] bg-white px-3 py-2 text-[13px] leading-5 text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
+          />
+          <button
+            type="button"
+            onClick={startCanvasEdit}
+            className="inline-flex h-9 items-center justify-center rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#2563eb] transition hover:bg-[#eef6ff]"
+          >
+            Edit directly on canvas
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Opacity">
         <PrecisionControl
           title=""
           value={selectedText.opacity ?? 100}

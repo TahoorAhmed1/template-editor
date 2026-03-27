@@ -3,8 +3,10 @@ import {
   Trash2, Copy, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown,
   AlignLeft, AlignCenter, AlignRight, Plus, Lock, Unlock,
   FlipHorizontal, FlipVertical, Bold, Italic, Underline,
+  ChevronDown, CircleOff, Sparkles,
 } from "lucide-react";
-import type { CanvasElement, CanvasSizePreset, EditorMode } from "./EditorShell";
+import type { CanvasElement, CanvasSizePreset, EditorMode, DrawSettings, ActiveTool } from "./EditorShell";
+import { DrawFlyout } from "./GlobalSidebarFlyouts";
 import { ImageAdjustmentSidebar } from "./ImageAdjustmentSidebar";
 import { TextPropertiesSidebar } from "./TextPropertiesSidebar";
 
@@ -14,6 +16,7 @@ interface InspectorProps {
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
   onMoveLayer: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
+  onStartTextEditing?: (id: string) => void;
   canvasSize: CanvasSizePreset;
   canvasBackground: string;
   onBackgroundChange: (bg: string) => void;
@@ -28,6 +31,11 @@ interface InspectorProps {
   folds: string;
   onFoldsChange: (folds: string) => void;
   mode: EditorMode;
+  activeTool?: ActiveTool;
+  onAddElement?: (el: Omit<CanvasElement, "id">) => void;
+  drawSettings?: DrawSettings;
+  onUpdateDrawSettings?: (updates: Partial<DrawSettings>) => void;
+  onFinishDrawing?: () => void;
   isMobile?: boolean;
 }
 
@@ -37,6 +45,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   onDeleteElement,
   onDuplicateElement,
   onMoveLayer,
+  onStartTextEditing,
   canvasSize,
   canvasBackground,
   onBackgroundChange,
@@ -51,34 +60,49 @@ export const Inspector: React.FC<InspectorProps> = ({
   folds,
   onFoldsChange,
   mode,
+  activeTool,
+  onAddElement,
+  drawSettings,
+  onUpdateDrawSettings,
+  onFinishDrawing,
   isMobile,
 }) => {
   if (isMobile) return null;
 
+  const showDrawInspector = activeTool === "draw" && !!onAddElement;
+
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-editor-inspector">
-      <div className="px-4 py-3 border-b border-editor-inspector-border">
-        <h2 className="text-sm font-semibold text-foreground">
-          {selectedElement
-            ? selectedElement.type === "text"
+      {selectedElement && !showDrawInspector ? (
+        <div className="border-b border-editor-inspector-border px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            {selectedElement.type === "text"
               ? "Properties"
               : selectedElement.type === "shape"
               ? "Shape"
               : selectedElement.type === "video"
               ? "Video"
-              : "Image"
-            : "Design"}
-        </h2>
-      </div>
+              : "Image"}
+          </h2>
+        </div>
+      ) : null}
 
       <div className="flex-1 overflow-y-auto editor-scroll">
-        {selectedElement ? (
+        {showDrawInspector ? (
+          <DrawFlyout
+            onAddElement={onAddElement}
+            settings={drawSettings}
+            onSettingsChange={onUpdateDrawSettings}
+            onFinishDrawing={onFinishDrawing}
+          />
+        ) : selectedElement ? (
           <ElementInspector
             element={selectedElement}
             onUpdate={(updates) => onUpdateElement(selectedElement.id, updates)}
             onDelete={() => onDeleteElement(selectedElement.id)}
             onDuplicate={() => onDuplicateElement(selectedElement.id)}
             onMoveLayer={(dir) => onMoveLayer(selectedElement.id, dir)}
+            onStartTextEditing={onStartTextEditing}
           />
         ) : (
           <DesignInspector
@@ -137,139 +161,188 @@ export const DesignInspector: React.FC<{
   mode,
   visibleSections,
 }) => {
-  const [bgType, setBgType] = React.useState<"solid" | "gradient" | "image">("solid");
+  const [bgType, setBgType] = React.useState<"solid" | "gradient" | "transparent">(
+    canvasBackground === "transparent" ? "transparent" : "solid",
+  );
+  const [animationPhase, setAnimationPhase] = React.useState<"start" | "end">("end");
+
+  React.useEffect(() => {
+    if (canvasBackground === "transparent") {
+      setBgType("transparent");
+    } else if (canvasBackground.includes("gradient")) {
+      setBgType("gradient");
+    } else {
+      setBgType("solid");
+    }
+  }, [canvasBackground]);
 
   const show = (section: "size" | "styles" | "background" | "title" | "layout") =>
     !visibleSections || visibleSections.includes(section);
 
+  const solidColor = canvasBackground.startsWith("#") ? canvasBackground : "#ffffff";
+  const styleSwatches = ["#7a1d5f", "#4f7b5f", "#d28aa2", "#4a4a3e"];
+  const applyBackgroundType = (nextType: "solid" | "gradient" | "transparent") => {
+    setBgType(nextType);
+
+    if (nextType === "transparent") {
+      onBackgroundChange("transparent");
+      return;
+    }
+
+    if (nextType === "gradient") {
+      onBackgroundChange("linear-gradient(135deg, #7b2b61 0%, #f0c1cf 55%, #4d624c 100%)");
+      return;
+    }
+
+    onBackgroundChange(solidColor);
+  };
+
   return (
-    <div className="p-4 space-y-5">
+    <div className="space-y-0 px-4 py-3 text-[#4A5568]">
       {show("size") && (
-        <Section title="Size">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[13px] font-semibold text-foreground">{canvasSize.label}</p>
-              <p className="text-[11px] text-muted-foreground">
-                {canvasSize.width}px × {canvasSize.height}px
-              </p>
+        <div className="border-b border-editor-inspector-border pb-4">
+          <div className="mb-4 text-center text-[18px] font-medium text-[#2d3758]">Design</div>
+
+          <div className="flex items-start justify-between gap-3">
+            <span className="pt-3 text-[13px] text-[#718096]">Size</span>
+            <div className="rounded-xl border border-[#d9e0ea] bg-white px-4 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+              <p className="text-[14px] font-semibold text-[#4A5568]">{canvasSize.label}</p>
+              <p className="text-[12px] text-[#8a94a6]">{canvasSize.width}px × {canvasSize.height}px</p>
             </div>
           </div>
-        </Section>
+        </div>
       )}
 
       {show("styles") && (
-        <Section title="Styles">
-          <button className="w-full h-9 rounded-lg border border-dashed border-editor-inspector-border hover:border-primary/50 transition-colors flex items-center justify-center gap-2 text-muted-foreground hover:text-foreground text-[12px]">
-            <Plus size={14} />
-          </button>
-        </Section>
+        <div className="border-b border-editor-inspector-border py-4">
+          <div className="mb-3 text-[13px] text-[#718096]">Styles</div>
+          <div className="flex items-center gap-2">
+            {styleSwatches.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => onBackgroundChange(color)}
+                className="h-7 w-7 rounded-sm border border-white/50 shadow-sm transition hover:scale-105"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+            <button
+              type="button"
+              className="flex h-7 w-7 items-center justify-center rounded-sm border border-[#d7dce3] bg-white text-[#4A5568] shadow-sm transition hover:bg-[#f7fafc]"
+            >
+              <Plus size={13} />
+            </button>
+          </div>
+        </div>
       )}
 
       {show("background") && (
-        <Section title="Background">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+        <div className="border-b border-editor-inspector-border py-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] text-[#718096]">Background</span>
+            <div className="relative">
               <select
                 value={bgType}
-                onChange={(e) => setBgType(e.target.value as "solid" | "gradient" | "image")}
-                className="h-8 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 w-full"
+                onChange={(e) => applyBackgroundType(e.target.value as "solid" | "gradient" | "transparent")}
+                className="h-9 appearance-none rounded-md border border-transparent bg-transparent pl-2 pr-6 text-[14px] text-[#4A5568] outline-none"
               >
                 <option value="solid">Solid Color</option>
                 <option value="gradient">Gradient</option>
-                <option value="image">Image</option>
+                <option value="transparent">Transparent</option>
               </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[#6b7280]" />
             </div>
-
-            {bgType === "solid" && (
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-muted-foreground">Color</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={canvasBackground.startsWith("#") ? canvasBackground : "#ffffff"}
-                    onChange={(e) => onBackgroundChange(e.target.value)}
-                    className="w-8 h-8 rounded-md border border-editor-inspector-border cursor-pointer"
-                  />
-                </div>
-              </div>
-            )}
-
-            {bgType === "gradient" && (
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                  "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
-                  "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                  "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
-                  "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
-                  "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
-                ].map((gradient, i) => (
-                  <button
-                    key={i}
-                    onClick={() => onBackgroundChange(gradient)}
-                    className={`w-full aspect-square rounded-md border transition-transform hover:scale-105 ${
-                      canvasBackground === gradient
-                        ? "border-primary ring-2 ring-primary/30"
-                        : "border-editor-inspector-border"
-                    }`}
-                    style={{ background: gradient }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {bgType === "image" && (
-              <div className="text-[12px] text-muted-foreground text-center py-3">
-                Upload or choose a background image from the Media panel.
-              </div>
-            )}
           </div>
-        </Section>
+
+          <div className="mt-3 rounded-md bg-[#f8fafc] p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] text-[#718096]">Color</span>
+              <label className="flex h-8 w-10 cursor-pointer items-center justify-center rounded-[3px] border border-[#d7dce3] bg-white p-1 shadow-sm">
+                <input
+                  type="color"
+                  value={solidColor}
+                  onChange={(e) => onBackgroundChange(e.target.value)}
+                  className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-2 text-[13px] text-[#718096]">Animation</div>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { key: "start", label: "Start" },
+                { key: "end", label: "End" },
+              ] as const).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setAnimationPhase(item.key)}
+                  className={`flex min-h-[68px] flex-col items-center justify-center rounded-md border border-dashed transition ${
+                    animationPhase === item.key
+                      ? "border-[#8fd3f8] bg-[#eef9ff] text-[#33a8ef]"
+                      : "border-[#d7dce3] bg-white text-[#6b7280]"
+                  }`}
+                >
+                  <Sparkles size={16} />
+                  <span className="mt-2 text-[12px] font-medium">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {show("title") && (
-        <Section title="Title">
+        <div className="border-b border-editor-inspector-border py-4">
+          <div className="mb-3 text-[13px] font-semibold text-[#4A5568]">Title</div>
           <input
             type="text"
             value={designTitle}
             onChange={(e) => onDesignTitleChange(e.target.value)}
-            className="w-full h-9 px-3 text-[13px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+            className="h-10 w-full rounded-[3px] border border-[#d7dce3] bg-white px-3 text-[13px] text-[#4A5568] outline-none focus:ring-1 focus:ring-[#8fd3f8]"
           />
-        </Section>
+        </div>
       )}
 
       {show("layout") && (
-        <Section title="Layout">
-          <div className="space-y-3">
-            <ToggleRow label="Grid" on={gridEnabled} onToggle={onGridToggle} />
+        <div className="py-4">
+          <div className="mb-3 text-[13px] font-semibold text-[#4A5568]">Layout</div>
+          <div className="space-y-4">
+            <DesignToggleRow label="Grid" on={gridEnabled} onToggle={onGridToggle} />
 
             {mode === "image" && (
-              <>
-                {/* <div className="flex items-center justify-between">
-                  <span className="text-[12px] text-muted-foreground">Folds</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] text-[#718096]">Folds</span>
+                <div className="relative flex items-center gap-2 pr-5 text-[14px] text-[#4A5568]">
+                  <CircleOff size={14} className="text-[#7c8798]" />
                   <select
                     value={folds}
                     onChange={(e) => onFoldsChange(e.target.value)}
-                    className="h-8 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    className="appearance-none bg-transparent outline-none"
                   >
                     <option value="none">None</option>
                     <option value="bi-fold">Bi-fold</option>
                     <option value="tri-fold">Tri-fold</option>
                     <option value="z-fold">Z-fold</option>
                   </select>
-                </div> */}
-
-                <ToggleRow label="Bleed" on={bleedEnabled} onToggle={onBleedToggle} />
-              </>
+                  <ChevronDown size={14} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#6b7280]" />
+                </div>
+              </div>
             )}
 
-            <ToggleRow
-              label="Alignment Guides"
-              on={alignmentGuides}
-              onToggle={onAlignmentGuidesToggle}
-            />
+            {mode === "image" && (
+              <DesignToggleRow label="Bleed" on={bleedEnabled} onToggle={onBleedToggle} />
+            )}
+
+            <DesignToggleRow label="Alignment Guides" on={alignmentGuides} onToggle={onAlignmentGuidesToggle} />
           </div>
-        </Section>
+          <div className="mt-10 flex items-center justify-center gap-2 text-[12px] text-[#7c8798]">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-[#e6f6ff] text-[#7cc4ee]">◉</div>
+            <span>Designed by <span className="font-semibold text-[#4A5568]">Design House</span></span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -282,6 +355,7 @@ interface ElementInspectorProps {
   onDelete: () => void;
   onDuplicate: () => void;
   onMoveLayer: (dir: "up" | "down" | "top" | "bottom") => void;
+  onStartTextEditing?: (id: string) => void;
 }
 
 const FONT_OPTIONS = [
@@ -299,7 +373,7 @@ const FONT_OPTIONS = [
   { label: "Lucida Console", value: "'Lucida Console', monospace" },
 ];
 
-export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer }) => {
+export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer, onStartTextEditing }) => {
   if (element.type === "text") {
     return (
       <TextPropertiesSidebar
@@ -311,6 +385,7 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
         }}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
+        onStartCanvasEdit={onStartTextEditing}
       />
     );
   }
@@ -1207,6 +1282,25 @@ const ToggleRow: React.FC<{ label: string; on: boolean; onToggle: (on: boolean) 
         className={`h-4 w-4 rounded-full bg-primary-foreground shadow transition-transform duration-200 ${
           on ? "translate-x-5" : "translate-x-0"
         }`}
+      />
+    </button>
+  </div>
+);
+
+const DesignToggleRow: React.FC<{ label: string; on: boolean; onToggle: (on: boolean) => void }> = ({
+  label,
+  on,
+  onToggle,
+}) => (
+  <div className="flex items-center justify-between">
+    <span className="text-[13px] text-[#718096]">{label}</span>
+    <button
+      type="button"
+      onClick={() => onToggle(!on)}
+      className={`relative flex h-8 w-12 items-center rounded-full p-0.5 transition-colors ${on ? "bg-[#46c0f1]" : "bg-[#eceff3]"}`}
+    >
+      <span
+        className={`h-7 w-7 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-4" : "translate-x-0"}`}
       />
     </button>
   </div>

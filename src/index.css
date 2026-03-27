@@ -96,12 +96,29 @@
   #root {
     min-height: 100%;
     height: 100%;
+    overscroll-behavior: none;
   }
 
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
+}
+
+.mobile-editor-stage-shell {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.mobile-editor-stage-shell [data-allow-touch-scroll="y"],
+.mobile-editor-stage-shell .editor-scroll {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+.mobile-editor-stage-shell [data-allow-touch-scroll="x"] {
+  touch-action: pan-x;
+  overscroll-behavior: contain;
 }
 
 button,

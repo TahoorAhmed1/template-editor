@@ -3,27 +3,31 @@ import {
   Plus,
   Sparkles,
   ScanText,
-  Palette,
+  ScanLine,
   Type,
-  LayoutDashboard,
+  LayoutTemplate,
   Upload,
   LayoutGrid,
-  Image,
+  Images,
   CircleDot,
-  Triangle,
-  Film,
-  Table2,
+  Paintbrush,
+  PanelsTopLeft,
+  QrCode,
   X,
   ChevronLeft,
   Wand2,
   SlidersHorizontal,
   Move,
+  Palette,
+  LayoutDashboard,
 } from "lucide-react";
 import type {
   ToolType,
+  ActiveTool,
   CanvasElement,
   EditorMode,
   CanvasSizePreset,
+  DrawSettings,
 } from "./EditorShell";
 import { ToolbarSidePanel } from "./ToolbarSidePanel";
 import { DesignInspector, ElementInspector } from "./Inspector";
@@ -51,7 +55,8 @@ interface MobileBottomDockProps {
   alignmentGuides: boolean;
   bleedEnabled: boolean;
   folds: string;
-  activeTool: ToolType | null;
+  activeTool: ActiveTool;
+  drawSettings: DrawSettings;
 
   onToolClick: (tool: ToolType) => void;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
@@ -69,6 +74,8 @@ interface MobileBottomDockProps {
   onBleedToggle: (on: boolean) => void;
   onFoldsChange: (folds: string) => void;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
+  onUpdateDrawSettings: (updates: Partial<DrawSettings>) => void;
+  onFinishDrawing: () => void;
   requestedTab?: DockTab;
   onRequestedTabHandled?: () => void;
 }
@@ -99,7 +106,7 @@ const tools: ToolItem[] = [
   {
     id: "media",
     label: "Media",
-    icon: Image,
+    icon: Images,
     description: "Add photos, videos, elements, and audio",
     modes: ["image", "video"],
   },
@@ -122,41 +129,41 @@ const tools: ToolItem[] = [
     label: "Record",
     icon: CircleDot,
     description: "Capture photos, videos, or audio",
-    modes: ["video"],
+    modes: ["image", "video"],
   },
   {
     id: "slideshow",
     label: "Slideshow",
-    icon: Film,
+    icon: PanelsTopLeft,
     description: "Create text, photo, and video slideshows",
-    modes: ["video"],
+    modes: ["image", "video"],
   },
   {
     id: "draw",
-    label: "Shape",
-    icon: Triangle,
+    label: "Draw",
+    icon: Paintbrush,
     description: "Use a free-hand drawing tool",
     modes: ["image", "video"],
   },
   {
     id: "layout",
     label: "Layout",
-    icon: LayoutDashboard,
+    icon: LayoutTemplate,
     description: "Add schedules, menus, tables, and more",
-    modes: ["image", "video"],
-  },
-  {
-    id: "table",
-    label: "Table",
-    icon: Table2,
-    description: "Insert and edit table layouts",
     modes: ["image", "video"],
   },
   {
     id: "background",
     label: "Background",
-    icon: Palette,
+    icon: ScanLine,
     description: "Set solid, gradient, or image backgrounds",
+    modes: ["image", "video"],
+  },
+  {
+    id: "qrcode",
+    label: "QR Code",
+    icon: QrCode,
+    description: "Generate a QR code for your design",
     modes: ["image", "video"],
   },
 ];
@@ -191,6 +198,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   bleedEnabled,
   folds,
   activeTool,
+  drawSettings,
   onToolClick,
   onAddElement,
   onUpdateElement,
@@ -204,6 +212,8 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   onBleedToggle,
   onFoldsChange,
   onCanvasSizeChange,
+  onUpdateDrawSettings,
+  onFinishDrawing,
   requestedTab,
   onRequestedTabHandled,
 }) => {
@@ -257,6 +267,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   const renderHeaderTitle = () => {
     if (openTab === "add") {
       if (addToolView === "tool" && activeTool) {
+      if (activeTool === "select") return "Add";
         return activeTool === "ai"
           ? "AI"
           : activeTool.charAt(0).toUpperCase() + activeTool.slice(1);
@@ -442,6 +453,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
 
           <div
             className="overflow-y-auto px-3 pb-4"
+            data-allow-touch-scroll="y"
             style={{ maxHeight: "calc(60dvh - 64px)" }}
           >
             {openTab === "add" && addToolView === "list" && (
@@ -471,7 +483,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
               </div>
             )}
 
-            {openTab === "add" && addToolView === "tool" && activeTool && (
+            {openTab === "add" && addToolView === "tool" && activeTool !== "select" && (
               <div className="px-1 pb-4">
                 <ToolbarSidePanel
                   activeTool={activeTool}
@@ -484,6 +496,13 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                   canvasBackground={canvasBackground}
                   mode={mode}
                   onCanvasSizeChange={onCanvasSizeChange}
+                  drawSettings={drawSettings}
+                  onUpdateDrawSettings={onUpdateDrawSettings}
+                  onFinishDrawing={() => {
+                    onFinishDrawing();
+                    setOpenTab(null);
+                    setAddToolView("list");
+                  }}
                 />
               </div>
             )}
@@ -535,7 +554,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             </span>
           </button>
 
-          <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="min-w-0 flex-1 overflow-x-auto" data-allow-touch-scroll="x">
             <div className="flex items-center gap-1 pr-1">
               {scrollableTabs.map((tab) => {
                 const Icon = tab.icon;

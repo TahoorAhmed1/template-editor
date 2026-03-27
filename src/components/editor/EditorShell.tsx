@@ -8,6 +8,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileBottomDock } from "./MobileBottomDock";
 import { LayersPanel } from "./LayersPanel";
 import { MobileLayerSheet } from "./MobileLayerSheet";
+import { useTextEditStore } from "@/stores/useTextEditStore";
 
 export type ToolType =
   | "uploads"
@@ -22,6 +23,23 @@ export type ToolType =
   | "slideshow"
   | "qrcode"
   | "table";
+
+export type ActiveTool = ToolType | "select";
+export type DrawToolKind = "eraser" | "pencil" | "circle" | "spray";
+
+export interface DrawSettings {
+  tool: DrawToolKind;
+  color: string;
+  brushSize: number;
+}
+
+type RecordCaptureMode = "photo" | "video" | "audio";
+
+type EditorToolActionDetail = {
+  tool: string;
+  action: string;
+  payload?: Record<string, unknown>;
+};
 
 export type EditorMode = "image" | "video";
 
@@ -247,6 +265,96 @@ const reindexLayers = (layers: CanvasElement[]) =>
     zIndex: index + 1,
   }));
 
+const INSERTION_MARGIN = 24;
+const INSERTION_OFFSET_STEP = 28;
+const INSERTION_SEARCH_LIMIT = 36;
+
+type LayerBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const clampInsertionCoordinate = (
+  value: number,
+  layerSize: number,
+  canvasSize: number,
+) => {
+  const maxCoordinate = Math.max(INSERTION_MARGIN, canvasSize - layerSize - INSERTION_MARGIN);
+  return Math.min(maxCoordinate, Math.max(INSERTION_MARGIN, Math.round(value)));
+};
+
+const getLayerBounds = ({ x, y, width, height }: LayerBounds): LayerBounds => ({
+  x,
+  y,
+  width: Math.max(1, width),
+  height: Math.max(1, height),
+});
+
+const getOverlapArea = (candidate: LayerBounds, existing: LayerBounds) => {
+  const overlapWidth =
+    Math.min(candidate.x + candidate.width, existing.x + existing.width) -
+    Math.max(candidate.x, existing.x);
+  const overlapHeight =
+    Math.min(candidate.y + candidate.height, existing.y + existing.height) -
+    Math.max(candidate.y, existing.y);
+
+  if (overlapWidth <= 0 || overlapHeight <= 0) {
+    return 0;
+  }
+
+  return overlapWidth * overlapHeight;
+};
+
+const findInsertionPosition = (
+  layers: CanvasElement[],
+  canvasSize: CanvasSizePreset,
+  element: Pick<CanvasElement, "width" | "height" | "x" | "y">,
+) => {
+  const width = Math.max(1, element.width);
+  const height = Math.max(1, element.height);
+  const centerX = (canvasSize.width - width) / 2;
+  const centerY = (canvasSize.height - height) / 2;
+
+  const baseX = clampInsertionCoordinate(element.x ?? centerX, width, canvasSize.width);
+  const baseY = clampInsertionCoordinate(element.y ?? centerY, height, canvasSize.height);
+  const existingBounds = layers
+    .filter((layer) => layer.visible !== false)
+    .map((layer) => getLayerBounds(layer));
+
+  let bestPosition = { x: baseX, y: baseY };
+  let lowestOverlap = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < INSERTION_SEARCH_LIMIT; index += 1) {
+    const ring = Math.floor(index / 6);
+    const column = index % 6;
+    const horizontalOffset = (column - 2.5) * INSERTION_OFFSET_STEP;
+    const verticalDirection = ring % 2 === 0 ? 1 : -1;
+    const verticalOffset = Math.ceil(ring / 2) * INSERTION_OFFSET_STEP * verticalDirection;
+    const candidate = {
+      x: clampInsertionCoordinate(baseX + horizontalOffset, width, canvasSize.width),
+      y: clampInsertionCoordinate(baseY + verticalOffset, height, canvasSize.height),
+    };
+    const candidateBounds = getLayerBounds({ ...candidate, width, height });
+    const overlapScore = existingBounds.reduce(
+      (total, bounds) => total + getOverlapArea(candidateBounds, bounds),
+      0,
+    );
+
+    if (overlapScore === 0) {
+      return candidate;
+    }
+
+    if (overlapScore < lowestOverlap) {
+      lowestOverlap = overlapScore;
+      bestPosition = candidate;
+    }
+  }
+
+  return bestPosition;
+};
+
 interface EditorShellProps {
   mode: EditorMode;
   initialSize: CanvasSizePreset;
@@ -278,7 +386,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
     );
   }
 
-  const [activeTool, setActiveTool] = React.useState<ToolType | null>(null);
+  const [activeTool, setActiveTool] = React.useState<ActiveTool>("select");
   const [selectedLayerId, setSelectedLayerId] = React.useState<string | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
   const [zoom, setZoom] = React.useState(100);
@@ -295,14 +403,25 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [showDownloadModal, setShowDownloadModal] = React.useState(false);
   const [showResizeModal, setShowResizeModal] = React.useState(false);
   const [showAIModal, setShowAIModal] = React.useState(false);
+  const [recordCaptureMode, setRecordCaptureMode] = React.useState<RecordCaptureMode | null>(null);
+  const [drawSettings, setDrawSettings] = React.useState<DrawSettings>({
+    tool: "pencil",
+    color: "#000000",
+    brushSize: 10,
+  });
+  const [finishDrawingRequest, setFinishDrawingRequest] = React.useState(0);
   const editorRootRef = React.useRef<HTMLDivElement>(null);
   const [videoDuration, setVideoDuration] = React.useState(10);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [currentTime, setCurrentTime] = React.useState(0);
+  const pendingTextEditId = useTextEditStore((state) => state.requestedElementId);
+  const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
+  const clearTextEditRequest = useTextEditStore((state) => state.clearTextEditRequest);
 
   const [elements, setElements] = React.useState<CanvasElement[]>(() => [
     normalizeLayer(initialTitleElementRef.current!, 1),
   ]);
+  const [elementPreviewById, setElementPreviewById] = React.useState<Record<string, Partial<CanvasElement>>>({});
   const [history, setHistory] = React.useState<HistoryEntry[]>([
     {
       elements: [normalizeLayer(initialTitleElementRef.current!, 1)],
@@ -350,9 +469,17 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
     () => [...elements].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
     [elements],
   );
-  const selectedElementIds = selectedLayerId ? [selectedLayerId] : [];
+  const selectedElementIds = React.useMemo(
+    () => (activeTool === "draw" ? [] : selectedLayerId ? [selectedLayerId] : []),
+    [activeTool, selectedLayerId],
+  );
   const selectedElement =
     layers.find((layer) => layer.id === selectedLayerId) ?? null;
+  const selectedElementPreview =
+    selectedElement && elementPreviewById[selectedElement.id]
+      ? { ...selectedElement, ...elementPreviewById[selectedElement.id] }
+      : selectedElement;
+  const showDrawInspector = activeTool === "draw";
 
   const syncDesignTitleElement = useCallback(
     (nextTitle: string, nextCanvasSize: CanvasSizePreset = canvasSize) => {
@@ -387,6 +514,9 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
 
   const handleToolClick = (tool: ToolType) => {
   if (isMobile) {
+    if (tool === "draw") {
+      setSelectedLayerId(null);
+    }
     setActiveTool(tool);
     setRequestedMobileTab("add");
     return;
@@ -394,12 +524,43 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
 
   if (activeTool === tool && sidebarExpanded) {
     setSidebarExpanded(false);
-    setActiveTool(null);
+    setActiveTool("select");
   } else {
+    if (tool === "draw") {
+      setSelectedLayerId(null);
+    }
     setActiveTool(tool);
     setSidebarExpanded(true);
   }
 };
+
+  const updateDrawSettings = useCallback((updates: Partial<DrawSettings>) => {
+    setDrawSettings((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const updateElementPreview = useCallback((id: string, updates: Partial<CanvasElement>) => {
+    setElementPreviewById((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? {}),
+        ...updates,
+      },
+    }));
+  }, []);
+
+  const clearElementPreview = useCallback((id?: string) => {
+    if (!id) {
+      setElementPreviewById({});
+      return;
+    }
+
+    setElementPreviewById((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   const updateElement = useCallback(
     (id: string, updates: Partial<CanvasElement>) => {
@@ -449,18 +610,166 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
 );
 
   const addElement = useCallback(
-  (element: Omit<CanvasElement, "id">) => {
-    const nextZIndex = elements.length + 1;
-    const newEl = normalizeLayer({ ...element, id: generateId() }, nextZIndex);
-    setElements((prev) => {
-      const next = [...prev, newEl];
-      pushHistory(next);
-      return next;
-    });
-    setSelectedLayerId(newEl.id);
-  },
-  [elements.length, pushHistory]
-);
+    (element: Omit<CanvasElement, "id">) => {
+      let newElementId: string | null = null;
+
+      setElements((prev) => {
+        const insertionPosition = findInsertionPosition(prev, canvasSize, element);
+        const nextZIndex = prev.length + 1;
+        const newEl = normalizeLayer(
+          {
+            ...element,
+            ...insertionPosition,
+            id: generateId(),
+          },
+          nextZIndex,
+        );
+
+        newElementId = newEl.id;
+
+        const next = [...prev, newEl];
+        pushHistory(next);
+        return next;
+      });
+
+      if (!newElementId) return;
+
+      setSelectedLayerId(newElementId);
+      if (element.type === "text") {
+        requestTextEdit(newElementId);
+      }
+    },
+    [canvasSize, pushHistory, requestTextEdit],
+  );
+
+  const handleAutoEditHandled = useCallback((_id: string) => {
+    clearTextEditRequest();
+  }, [clearTextEditRequest]);
+
+  const startTextEditing = useCallback((id: string) => {
+    setSelectedLayerId(id);
+    requestTextEdit(id);
+  }, [requestTextEdit]);
+
+  const addCenteredElement = useCallback(
+    (element: Omit<CanvasElement, "id" | "x" | "y">) => {
+      const width = element.width;
+      const height = element.height;
+
+      addElement({
+        ...element,
+        x: Math.max(24, Math.round((canvasSize.width - width) / 2)),
+        y: Math.max(24, Math.round((canvasSize.height - height) / 2)),
+      });
+    },
+    [addElement, canvasSize.height, canvasSize.width],
+  );
+
+  const handleCapturedPhoto = useCallback(
+    (dataUrl: string, width: number, height: number) => {
+      const maxWidth = canvasSize.width * 0.62;
+      const maxHeight = canvasSize.height * 0.62;
+      const scaleRatio = Math.min(maxWidth / width, maxHeight / height, 1);
+
+      addCenteredElement({
+        type: "image",
+        width: Math.max(120, Math.round(width * scaleRatio)),
+        height: Math.max(120, Math.round(height * scaleRatio)),
+        src: dataUrl,
+        opacity: 100,
+      });
+      setRecordCaptureMode(null);
+    },
+    [addCenteredElement, canvasSize.height, canvasSize.width],
+  );
+
+  const handleCapturedVideo = useCallback(
+    (src: string, durationSeconds: number, width: number, height: number) => {
+      const maxWidth = canvasSize.width * 0.64;
+      const maxHeight = canvasSize.height * 0.58;
+      const scaleRatio = Math.min(maxWidth / width, maxHeight / height, 1);
+
+      addCenteredElement({
+        type: "video",
+        width: Math.max(180, Math.round(width * scaleRatio)),
+        height: Math.max(120, Math.round(height * scaleRatio)),
+        src,
+        duration: Math.max(1, Math.round(durationSeconds || 1)),
+        opacity: 100,
+      });
+      setRecordCaptureMode(null);
+    },
+    [addCenteredElement, canvasSize.height, canvasSize.width],
+  );
+
+  const handleCapturedAudio = useCallback(
+    (src: string, durationSeconds: number) => {
+      const secondsLabel = `${durationSeconds.toFixed(1)}s voice over`;
+
+      addCenteredElement({
+        type: "text",
+        width: Math.min(420, Math.round(canvasSize.width * 0.56)),
+        height: 88,
+        content: `Audio Recording\n${secondsLabel}`,
+        fontSize: 28,
+        fontFamily: "'Inter', sans-serif",
+        fontWeight: "700",
+        color: "#123a63",
+        backgroundColor: "#ffffff",
+        textAlign: "center",
+        textVerticalAlign: "middle",
+        lineHeight: 1.15,
+        linkUrl: src,
+        opacity: 100,
+      });
+      setRecordCaptureMode(null);
+    },
+    [addCenteredElement, canvasSize.width],
+  );
+
+  const commitDrawLayer = useCallback(
+    (src: string) => {
+      const nextZIndex = elements.length + 1;
+      const newEl = normalizeLayer(
+        {
+          id: generateId(),
+          type: "image",
+          x: 0,
+          y: 0,
+          width: canvasSize.width,
+          height: canvasSize.height,
+          src,
+          opacity: 100,
+        },
+        nextZIndex,
+      );
+
+      setElements((prev) => {
+        const next = [...prev, newEl];
+        pushHistory(next);
+        return next;
+      });
+      setSelectedLayerId(null);
+    },
+    [canvasSize.height, canvasSize.width, elements.length, pushHistory],
+  );
+
+  const handleFinishDrawing = useCallback(() => {
+    setFinishDrawingRequest((prev) => prev + 1);
+  }, []);
+
+  const handleDrawingCommitted = useCallback(
+    (dataUrl: string | null) => {
+      if (dataUrl) {
+        commitDrawLayer(dataUrl);
+      }
+
+      setSelectedLayerId(null);
+      setActiveTool("select");
+      setSidebarExpanded(false);
+    },
+    [commitDrawLayer],
+  );
 
   const deleteElement = useCallback(
     (id?: string) => {
@@ -601,18 +910,17 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   []
 );
 
-  const handleEditorPointerDownCapture = React.useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const target = e.target;
+  const focusEditorRootFromTarget = React.useCallback((target: EventTarget | null) => {
+      const resolvedTarget = target;
 
       if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement
+        resolvedTarget instanceof HTMLInputElement ||
+        resolvedTarget instanceof HTMLTextAreaElement
       ) {
         return;
       }
 
-      const element = target instanceof HTMLElement ? target : null;
+      const element = resolvedTarget instanceof HTMLElement ? resolvedTarget : null;
       if (element?.closest('[contenteditable="true"]')) {
         return;
       }
@@ -620,6 +928,20 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
       editorRootRef.current?.focus();
     },
     [],
+  );
+
+  const handleEditorMouseDownCapture = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      focusEditorRootFromTarget(e.target);
+    },
+    [focusEditorRootFromTarget],
+  );
+
+  const handleEditorTouchStartCapture = React.useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      focusEditorRootFromTarget(e.target);
+    },
+    [focusEditorRootFromTarget],
   );
 
   const handleCanvasSizeChange = useCallback(
@@ -772,6 +1094,21 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   moveSelectedElementsBy,
   mode,
 ]);
+
+  React.useEffect(() => {
+    const handleToolAction = (event: Event) => {
+      const customEvent = event as CustomEvent<EditorToolActionDetail>;
+      const detail = customEvent.detail;
+      if (!detail || detail.tool !== "record") return;
+
+      if (detail.action === "photo" || detail.action === "video" || detail.action === "audio") {
+        setRecordCaptureMode(detail.action);
+      }
+    };
+
+    window.addEventListener("editor:tool-action", handleToolAction as EventListener);
+    return () => window.removeEventListener("editor:tool-action", handleToolAction as EventListener);
+  }, []);
 
   // React.useEffect(() => {
   //   const handler = (e: KeyboardEvent) => {
@@ -1001,8 +1338,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
     <div
     ref={editorRootRef}
     tabIndex={0}
-    // onMouseDownCapture={() => editorRootRef.current?.focus()}
-    onPointerDownCapture={handleEditorPointerDownCapture}
+    onTouchStartCapture={handleEditorTouchStartCapture}
     className="h-screen w-screen flex flex-col overflow-hidden bg-gray-100 outline-none"
   >
       <TopBar
@@ -1020,12 +1356,17 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
       />
 
       <div className="grid flex-1 min-h-0 grid-cols-1 overflow-hidden bg-[#eef1f5]">
-  <div className="relative min-h-0">
+  <div className="mobile-editor-stage-shell relative min-h-0">
         <CanvasStage
           elements={layers}
           selectedElementIds={selectedElementIds}
           onSelectElement={handleSelectElement}
+          onStartTextEditing={startTextEditing}
           onUpdateElement={updateElement}
+          onPreviewElement={updateElementPreview}
+          onClearPreviewElement={clearElementPreview}
+          autoEditElementId={pendingTextEditId}
+          onAutoEditHandled={handleAutoEditHandled}
           zoom={zoom}
           onZoomChange={setZoom}
           canvasSize={canvasSize}
@@ -1035,6 +1376,10 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
           bleedEnabled={bleedEnabled}
           isMobileViewport
           bottomInset={170}
+          activeTool={activeTool}
+          drawSettings={drawSettings}
+          finishDrawingRequest={finishDrawingRequest}
+          onDrawingCommitted={handleDrawingCommitted}
         />
         </div>
 
@@ -1062,6 +1407,9 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
           onBleedToggle={setBleedEnabled}
           onFoldsChange={setFolds}
           onCanvasSizeChange={handleCanvasSizeChange}
+          drawSettings={drawSettings}
+          onUpdateDrawSettings={updateDrawSettings}
+          onFinishDrawing={handleFinishDrawing}
           requestedTab={requestedMobileTab}
           onRequestedTabHandled={() => setRequestedMobileTab(null)}
         />
@@ -1090,6 +1438,16 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
         />
       )}
 
+      {recordCaptureMode && (
+        <RecordCaptureModal
+          mode={recordCaptureMode}
+          onClose={() => setRecordCaptureMode(null)}
+          onCapturePhoto={handleCapturedPhoto}
+          onCaptureVideo={handleCapturedVideo}
+          onCaptureAudio={handleCapturedAudio}
+        />
+      )}
+
       <MobileLayerSheet
         layer={selectedElement}
         onClose={() => setSelectedLayerId(null)}
@@ -1106,8 +1464,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   <div
     ref={editorRootRef}
     tabIndex={0}
-    // onMouseDownCapture={() => editorRootRef.current?.focus()}
-    onPointerDownCapture={handleEditorPointerDownCapture}
+    onMouseDownCapture={handleEditorMouseDownCapture}
     className="h-screen w-screen flex flex-col overflow-hidden bg-[#f7f7f8] outline-none"
   >
       <TopBar
@@ -1140,7 +1497,12 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
           elements={layers}
           selectedElementIds={selectedElementIds}
           onSelectElement={handleSelectElement}
+          onStartTextEditing={startTextEditing}
           onUpdateElement={updateElement}
+          onPreviewElement={updateElementPreview}
+          onClearPreviewElement={clearElementPreview}
+          autoEditElementId={pendingTextEditId}
+          onAutoEditHandled={handleAutoEditHandled}
           zoom={zoom}
           onZoomChange={setZoom}
           canvasSize={canvasSize}
@@ -1148,15 +1510,20 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
           gridEnabled={gridEnabled}
           alignmentGuides={alignmentGuides}
           bleedEnabled={bleedEnabled}
+          activeTool={activeTool}
+          drawSettings={drawSettings}
+          finishDrawingRequest={finishDrawingRequest}
+          onDrawingCommitted={handleDrawingCommitted}
         />
 
         <div className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l border-editor-inspector-border bg-editor-inspector">
           <Inspector
-            selectedElement={selectedElement}
+            selectedElement={selectedElementPreview}
             onUpdateElement={updateElement}
             onDeleteElement={deleteElement}
             onDuplicateElement={duplicateElement}
             onMoveLayer={moveElementLayer}
+            onStartTextEditing={startTextEditing}
             canvasSize={canvasSize}
             canvasBackground={canvasBackground}
             onBackgroundChange={handleBackgroundChange}
@@ -1171,15 +1538,22 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
             folds={folds}
             onFoldsChange={setFolds}
             mode={mode}
+            activeTool={activeTool}
+            onAddElement={addElement}
+            drawSettings={drawSettings}
+            onUpdateDrawSettings={updateDrawSettings}
+            onFinishDrawing={handleFinishDrawing}
           />
-          <LayersPanel
-            layers={layers}
-            selectedLayerId={selectedLayerId}
-            onSelectLayer={setSelectedLayerId}
-            onToggleVisibility={toggleLayerVisibility}
-            onDeleteLayer={deleteElement}
-            onReorderLayers={reorderLayers}
-          />
+          {!showDrawInspector && (
+            <LayersPanel
+              layers={layers}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={setSelectedLayerId}
+              onToggleVisibility={toggleLayerVisibility}
+              onDeleteLayer={deleteElement}
+              onReorderLayers={reorderLayers}
+            />
+          )}
         </div>
       </div>
 
@@ -1215,6 +1589,16 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
         <AIModal
           onClose={() => setShowAIModal(false)}
           onGenerate={handleAIGenerate}
+        />
+      )}
+
+      {recordCaptureMode && (
+        <RecordCaptureModal
+          mode={recordCaptureMode}
+          onClose={() => setRecordCaptureMode(null)}
+          onCapturePhoto={handleCapturedPhoto}
+          onCaptureVideo={handleCapturedVideo}
+          onCaptureAudio={handleCapturedAudio}
         />
       )}
     </div>
@@ -1356,6 +1740,272 @@ const AIModal: React.FC<{
           >
             Cancel
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RecordCaptureModal: React.FC<{
+  mode: RecordCaptureMode;
+  onClose: () => void;
+  onCapturePhoto: (dataUrl: string, width: number, height: number) => void;
+  onCaptureVideo: (src: string, durationSeconds: number, width: number, height: number) => void;
+  onCaptureAudio: (src: string, durationSeconds: number) => void;
+}> = ({ mode, onClose, onCapturePhoto, onCaptureVideo, onCaptureAudio }) => {
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const playbackVideoRef = React.useRef<HTMLVideoElement | null>(null);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const recorderRef = React.useRef<MediaRecorder | null>(null);
+  const chunksRef = React.useRef<Blob[]>([]);
+  const recordStartRef = React.useRef<number | null>(null);
+
+  const [error, setError] = React.useState<string | null>(null);
+  const [isReady, setIsReady] = React.useState(false);
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [capturedUrl, setCapturedUrl] = React.useState<string | null>(null);
+  const [capturedDuration, setCapturedDuration] = React.useState(0);
+  const [captureSize, setCaptureSize] = React.useState({ width: 1280, height: 720 });
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const setup = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError("Camera and microphone access is not supported in this browser.");
+        return;
+      }
+
+      try {
+        const constraints =
+          mode === "photo"
+            ? { video: { facingMode: "user" }, audio: false }
+            : mode === "video"
+            ? { video: { facingMode: "user" }, audio: true }
+            : { audio: true, video: false };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          const settings = videoTrack.getSettings();
+          setCaptureSize({
+            width: Math.round(settings.width || 1280),
+            height: Math.round(settings.height || 720),
+          });
+        }
+
+        if ((mode === "photo" || mode === "video") && videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => undefined);
+        }
+
+        setIsReady(true);
+      } catch (captureError) {
+        const message = captureError instanceof Error ? captureError.message : "Unable to access camera or microphone.";
+        setError(message);
+      }
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      if (capturedUrl) {
+        URL.revokeObjectURL(capturedUrl);
+      }
+    };
+  }, [capturedUrl, mode]);
+
+  React.useEffect(() => {
+    if (!capturedUrl) return;
+    if (mode === "video" && playbackVideoRef.current) {
+      playbackVideoRef.current.src = capturedUrl;
+    }
+    if (mode === "audio" && audioRef.current) {
+      audioRef.current.src = capturedUrl;
+    }
+  }, [capturedUrl, mode]);
+
+  const closeModal = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    onClose();
+  };
+
+  const takePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const width = video.videoWidth || captureSize.width;
+    const height = video.videoHeight || captureSize.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setError("Unable to capture photo.");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+    onCapturePhoto(canvas.toDataURL("image/png"), width, height);
+  };
+
+  const startRecording = () => {
+    const stream = streamRef.current;
+    if (!stream) {
+      setError("No media stream available.");
+      return;
+    }
+
+    const mimeCandidates =
+      mode === "video"
+        ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+        : ["audio/webm;codecs=opus", "audio/webm"];
+
+    const mimeType = mimeCandidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+
+    try {
+      chunksRef.current = [];
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recordStartRef.current = performance.now();
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blobType = mimeType || (mode === "video" ? "video/webm" : "audio/webm");
+        const blob = new Blob(chunksRef.current, { type: blobType });
+        const url = URL.createObjectURL(blob);
+        setCapturedUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        setCapturedDuration(
+          Math.max(0.5, ((performance.now() - (recordStartRef.current || performance.now())) / 1000)),
+        );
+        setIsRecording(false);
+      };
+
+      recorder.start();
+      setCapturedUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setCapturedDuration(0);
+      setIsRecording(true);
+    } catch (recordError) {
+      const message = recordError instanceof Error ? recordError.message : "Unable to start recording.";
+      setError(message);
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  };
+
+  const saveRecording = () => {
+    if (!capturedUrl) return;
+
+    if (mode === "video") {
+      onCaptureVideo(capturedUrl, capturedDuration, captureSize.width, captureSize.height);
+      return;
+    }
+
+    onCaptureAudio(capturedUrl, capturedDuration);
+  };
+
+  const title = mode === "photo" ? "Capture Photo" : mode === "video" ? "Record Video" : "Record Audio";
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 px-4">
+      <div className="w-full max-w-[680px] rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-5 py-4">
+          <h3 className="text-lg font-semibold text-[#1f2937]">{title}</h3>
+          <button onClick={closeModal} className="rounded-md px-3 py-1.5 text-sm text-[#64748b] hover:bg-[#f8fafc]">
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          {error ? <div className="rounded-xl border border-[#fecaca] bg-[#fff1f2] px-4 py-3 text-sm text-[#b42318]">{error}</div> : null}
+
+          {(mode === "photo" || mode === "video") && (
+            <div className="overflow-hidden rounded-2xl bg-[#0f172a]">
+              {capturedUrl && mode === "video" ? (
+                <video ref={playbackVideoRef} controls className="h-[360px] w-full bg-black object-contain" />
+              ) : (
+                <video ref={videoRef} muted playsInline className="h-[360px] w-full bg-black object-cover" />
+              )}
+            </div>
+          )}
+
+          {mode === "audio" && (
+            <div className="rounded-2xl border border-[#E2E8F0] bg-[#f8fafc] px-5 py-8 text-center">
+              <div className="text-base font-semibold text-[#0f172a]">Microphone Recorder</div>
+              <div className="mt-2 text-sm text-[#64748b]">
+                {isRecording ? "Recording in progress..." : capturedUrl ? "Preview your clip below." : isReady ? "Microphone is ready." : "Requesting microphone access..."}
+              </div>
+              {capturedUrl ? <audio ref={audioRef} controls className="mx-auto mt-5 w-full max-w-[420px]" /> : null}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            {mode === "photo" ? (
+              <button
+                onClick={takePhoto}
+                disabled={!isReady}
+                className="rounded-xl bg-[#3182CE] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2b6cb0] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Take Photo
+              </button>
+            ) : !isRecording ? (
+              <button
+                onClick={startRecording}
+                disabled={!isReady}
+                className="rounded-xl bg-[#3182CE] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2b6cb0] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {capturedUrl ? "Record Again" : "Start Recording"}
+              </button>
+            ) : (
+              <button
+                onClick={stopRecording}
+                className="rounded-xl bg-[#ef4444] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#dc2626]"
+              >
+                Stop Recording
+              </button>
+            )}
+
+            {(mode === "video" || mode === "audio") && capturedUrl && !isRecording && (
+              <button
+                onClick={saveRecording}
+                className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-2.5 text-sm font-semibold text-[#1D4ED8] transition hover:bg-[#DBEAFE]"
+              >
+                Add to Design
+              </button>
+            )}
+
+            {capturedDuration > 0 && (mode === "video" || mode === "audio") ? (
+              <div className="text-sm text-[#64748b]">Duration: {capturedDuration.toFixed(1)}s</div>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

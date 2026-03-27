@@ -7,9 +7,10 @@ import React, {
 } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import Konva from "konva";
-import type { CanvasElement } from "./EditorShell";
+import type { ActiveTool, CanvasElement, DrawSettings } from "./EditorShell";
 import { LayerEffectOverlay } from "./LayerEffectOverlay";
 import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
+import { useTextEditStore } from "@/stores/useTextEditStore";
 
 const konvaWithTextFix = Konva as typeof Konva & {
   _fixTextRendering?: boolean;
@@ -21,7 +22,12 @@ interface CanvasStageProps {
   elements: CanvasElement[];
   selectedElementIds: string[];
   onSelectElement: (id: string | null, shiftKey?: boolean) => void;
+  onStartTextEditing?: (id: string) => void;
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
+  onPreviewElement?: (id: string, updates: Partial<CanvasElement>) => void;
+  onClearPreviewElement?: (id?: string) => void;
+  autoEditElementId?: string | null;
+  onAutoEditHandled?: (id: string) => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   canvasSize: { width: number; height: number; label: string };
@@ -31,6 +37,10 @@ interface CanvasStageProps {
   bleedEnabled?: boolean;
   isMobileViewport?: boolean;
   bottomInset?: number;
+  activeTool?: ActiveTool;
+  drawSettings?: DrawSettings;
+  finishDrawingRequest?: number;
+  onDrawingCommitted?: (dataUrl: string | null) => void;
 }
 
 type InlineEditorState = {
@@ -39,6 +49,7 @@ type InlineEditorState = {
   y: number;
   width: number;
   height: number;
+  nodeOpacity: number;
   fontSize: number;
   rotation: number;
   fontFamily: string;
@@ -46,6 +57,7 @@ type InlineEditorState = {
   fontStyle: "normal" | "italic";
   color: string;
   lineHeight: number;
+  letterSpacing: number;
   textAlign: "left" | "center" | "right" | "justify";
   textTransform: "none" | "uppercase";
 };
@@ -55,12 +67,62 @@ type ParsedLinearGradient = {
   colorStops: Array<{ color: string; offset: number }>;
 };
 
+type TransformSession = {
+  activeAnchor: string | null;
+  originalElement: CanvasElement;
+  isCornerHandle: boolean;
+  originalBounds: GuideBounds;
+  startPointer: ViewportPoint | null;
+  aspectRatio: number;
+};
+
+type ViewportPoint = {
+  x: number;
+  y: number;
+};
+
+type PinchSession = {
+  startDistance: number;
+  startZoom: number;
+  anchorPoint: ViewportPoint;
+};
+
 const GRID_SIZE = 50;
 const GRID_MINOR_COLOR = "rgba(15, 23, 42, 0.14)";
 const GRID_MAJOR_COLOR = "rgba(15, 23, 42, 0.24)";
 const GRID_MAJOR_EVERY = 5;
 const GUIDE_COLOR = "rgba(37, 99, 235, 0.9)";
 const GUIDE_SNAP_THRESHOLD = 6;
+const TRANSFORM_GHOST_COLOR = "rgba(59, 130, 246, 0.7)";
+const MIN_ZOOM_PERCENT = 10;
+const MAX_DESKTOP_ZOOM_PERCENT = 200;
+const MAX_MOBILE_ZOOM_PERCENT = 500;
+const MOBILE_VIEWPORT_GUTTER = 12;
+const MIN_TRANSFORM_SIZE = 20;
+const PREVIEW_SYNC_INTERVAL_MS = 20;
+const DEFAULT_TRANSFORM_ANCHORS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "middle-right",
+  "bottom-right",
+  "bottom-center",
+  "bottom-left",
+  "middle-left",
+] as const;
+const TEXT_TRANSFORM_ANCHORS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "middle-right",
+  "bottom-right",
+  "bottom-center",
+  "bottom-left",
+  "middle-left",
+] as const;
+
+const imageAssetCache = new Map<string, HTMLImageElement>();
+const videoAssetCache = new Map<string, HTMLVideoElement>();
 
 type GuideBounds = {
   x: number;
@@ -71,6 +133,280 @@ type GuideBounds = {
 
 function snap(value: number, size: number) {
   return Math.round(value / size) * size;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampZoomPercent(value: number, isMobileViewport: boolean) {
+  return clamp(
+    Math.round(value),
+    MIN_ZOOM_PERCENT,
+    isMobileViewport ? MAX_MOBILE_ZOOM_PERCENT : MAX_DESKTOP_ZOOM_PERCENT,
+  );
+}
+
+function clampViewportOffset(
+  value: number,
+  viewportSize: number,
+  contentSize: number,
+  gutter: number,
+) {
+  const safeViewport = Math.max(1, viewportSize);
+  if (contentSize <= safeViewport - gutter * 2) {
+    return Math.round((safeViewport - contentSize) / 2);
+  }
+
+  const minOffset = safeViewport - contentSize - gutter;
+  const maxOffset = gutter;
+  return clamp(Math.round(value), minOffset, maxOffset);
+}
+
+function getOppositeCorner(bounds: GuideBounds, activeAnchor: string | null): ViewportPoint {
+  switch (activeAnchor) {
+    case "top-left":
+      return { x: bounds.x + bounds.width, y: bounds.y + bounds.height };
+    case "top-right":
+      return { x: bounds.x, y: bounds.y + bounds.height };
+    case "bottom-left":
+      return { x: bounds.x + bounds.width, y: bounds.y };
+    case "bottom-right":
+    default:
+      return { x: bounds.x, y: bounds.y };
+  }
+}
+
+function getAnchoredBoxFromCorner(
+  activeAnchor: string | null,
+  fixedCorner: ViewportPoint,
+  width: number,
+  height: number,
+): GuideBounds {
+  switch (activeAnchor) {
+    case "top-left":
+      return {
+        x: fixedCorner.x - width,
+        y: fixedCorner.y - height,
+        width,
+        height,
+      };
+    case "top-right":
+      return {
+        x: fixedCorner.x,
+        y: fixedCorner.y - height,
+        width,
+        height,
+      };
+    case "bottom-left":
+      return {
+        x: fixedCorner.x - width,
+        y: fixedCorner.y,
+        width,
+        height,
+      };
+    case "bottom-right":
+    default:
+      return {
+        x: fixedCorner.x,
+        y: fixedCorner.y,
+        width,
+        height,
+      };
+  }
+}
+
+function applyImageNodeCrop(node: Konva.Image, width: number, height: number) {
+  const source = node.image();
+  if (!(source instanceof HTMLImageElement)) return;
+
+  const crop = getCoverCrop(source, width, height);
+  if (crop) {
+    node.crop(crop);
+  }
+}
+
+function getMinimumScaleFactor(width: number, height: number) {
+  return Math.max(MIN_TRANSFORM_SIZE / Math.max(1, width), MIN_TRANSFORM_SIZE / Math.max(1, height));
+}
+
+function getImageTransformPreviewBounds(
+  session: TransformSession,
+  pointer: ViewportPoint,
+): GuideBounds {
+  const { originalBounds, activeAnchor, startPointer } = session;
+  if (!startPointer) {
+    return originalBounds;
+  }
+
+  const deltaX = pointer.x - startPointer.x;
+  const deltaY = pointer.y - startPointer.y;
+
+  if (activeAnchor === "middle-right") {
+    const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width + deltaX));
+    return {
+      x: originalBounds.x,
+      y: originalBounds.y,
+      width,
+      height: originalBounds.height,
+    };
+  }
+
+  if (activeAnchor === "middle-left") {
+    const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width - deltaX));
+    return {
+      x: originalBounds.x + (originalBounds.width - width),
+      y: originalBounds.y,
+      width,
+      height: originalBounds.height,
+    };
+  }
+
+  if (activeAnchor === "bottom-center") {
+    const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height + deltaY));
+    return {
+      x: originalBounds.x,
+      y: originalBounds.y,
+      width: originalBounds.width,
+      height,
+    };
+  }
+
+  if (activeAnchor === "top-center") {
+    const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height - deltaY));
+    return {
+      x: originalBounds.x,
+      y: originalBounds.y + (originalBounds.height - height),
+      width: originalBounds.width,
+      height,
+    };
+  }
+
+  const widthDirection = activeAnchor?.includes("left") ? -1 : 1;
+  const heightDirection = activeAnchor?.startsWith("top") ? -1 : 1;
+  const normalizedDeltaX = (deltaX * widthDirection) / Math.max(1, originalBounds.width);
+  const normalizedDeltaY = (deltaY * heightDirection) / Math.max(1, originalBounds.height);
+  const dominantDelta =
+    Math.abs(normalizedDeltaX) >= Math.abs(normalizedDeltaY)
+      ? normalizedDeltaX
+      : normalizedDeltaY;
+
+  const scaleFactor = Math.max(
+    getMinimumScaleFactor(originalBounds.width, originalBounds.height),
+    1 + dominantDelta,
+  );
+  const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width * scaleFactor));
+  const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height * scaleFactor));
+  const fixedCorner = getOppositeCorner(originalBounds, activeAnchor);
+
+  return getAnchoredBoxFromCorner(activeAnchor, fixedCorner, width, height);
+}
+
+function getTextTransformPreview(
+  session: TransformSession,
+  pointer: ViewportPoint,
+): { bounds: GuideBounds; fontSize: number } {
+  const { originalBounds, activeAnchor, startPointer, originalElement } = session;
+  const baseFontSize = originalElement.fontSize || 24;
+
+  if (!startPointer) {
+    return {
+      bounds: originalBounds,
+      fontSize: baseFontSize,
+    };
+  }
+
+  const deltaX = pointer.x - startPointer.x;
+  const deltaY = pointer.y - startPointer.y;
+
+  if (activeAnchor === "middle-right") {
+    const width = Math.max(40, Math.round(originalBounds.width + deltaX));
+    const measured = measureTextBox(originalElement, width, baseFontSize);
+    return {
+      bounds: {
+        x: originalBounds.x,
+        y: originalBounds.y,
+        width,
+        height: measured.height,
+      },
+      fontSize: baseFontSize,
+    };
+  }
+
+  if (activeAnchor === "middle-left") {
+    const width = Math.max(40, Math.round(originalBounds.width - deltaX));
+    const measured = measureTextBox(originalElement, width, baseFontSize);
+    return {
+      bounds: {
+        x: originalBounds.x + (originalBounds.width - width),
+        y: originalBounds.y,
+        width,
+        height: measured.height,
+      },
+      fontSize: baseFontSize,
+    };
+  }
+
+  if (activeAnchor === "top-center" || activeAnchor === "bottom-center") {
+    const heightDirection = activeAnchor === "top-center" ? -1 : 1;
+    const currentHeight = Math.max(20, originalBounds.height + deltaY * heightDirection);
+    const scaleFactor = Math.max(0.2, currentHeight / Math.max(1, originalBounds.height));
+    const fontSize = Math.max(8, Math.round(baseFontSize * scaleFactor));
+    const width = Math.max(40, Math.round(originalBounds.width * scaleFactor));
+    const measured = measureTextBox(originalElement, width, fontSize);
+    return {
+      bounds: {
+        x: originalBounds.x + (originalBounds.width - measured.width) / 2,
+        y:
+          activeAnchor === "top-center"
+            ? originalBounds.y + (originalBounds.height - measured.height)
+            : originalBounds.y,
+        width: measured.width,
+        height: measured.height,
+      },
+      fontSize,
+    };
+  }
+
+  // Corner drag: scale fontSize by height ratio (PosterMyWall rule)
+  const heightDirection = activeAnchor?.startsWith("top") ? -1 : 1;
+  const currentHeight = Math.max(20, originalBounds.height + deltaY * heightDirection);
+  const scaleFactor = Math.max(0.2, currentHeight / Math.max(1, originalBounds.height));
+  const fontSize = Math.max(8, Math.round(baseFontSize * scaleFactor));
+  const width = Math.max(40, Math.round(originalBounds.width * scaleFactor));
+  const measured = measureTextBox(originalElement, width, fontSize);
+  const fixedCorner = getOppositeCorner(originalBounds, activeAnchor);
+
+  return {
+    bounds: getAnchoredBoxFromCorner(activeAnchor, fixedCorner, width, measured.height),
+    fontSize,
+  };
+}
+
+function getStableImageTransformBounds(
+  session: TransformSession,
+  rawBounds: GuideBounds,
+): GuideBounds {
+  const scaleFactor = Math.max(
+    rawBounds.width / Math.max(1, session.originalBounds.width),
+    rawBounds.height / Math.max(1, session.originalBounds.height),
+  );
+  const nextWidth = Math.max(
+    MIN_TRANSFORM_SIZE,
+    Math.round(session.originalElement.width * scaleFactor),
+  );
+  const nextHeight = Math.max(
+    MIN_TRANSFORM_SIZE,
+    Math.round(session.originalElement.height * scaleFactor),
+  );
+  const fixedCorner = getOppositeCorner(session.originalBounds, session.activeAnchor);
+
+  return getAnchoredBoxFromCorner(
+    session.activeAnchor,
+    fixedCorner,
+    nextWidth,
+    nextHeight,
+  );
 }
 
 function getElementGuideBounds(element: CanvasElement): GuideBounds {
@@ -87,6 +423,19 @@ function getNodeGuideBounds(
   fallbackWidth: number,
   fallbackHeight: number,
 ): GuideBounds {
+  if (node instanceof Konva.Circle) {
+    const position = node.position();
+    const radius = node.radius() * Math.abs(node.scaleX?.() ?? 1);
+    const diameter = Math.max(1, radius * 2);
+
+    return {
+      x: position.x - radius,
+      y: position.y - radius,
+      width: diameter,
+      height: diameter,
+    };
+  }
+
   const position = node.position();
   const scaleX = Math.abs(node.scaleX?.() ?? 1);
   const scaleY = Math.abs(node.scaleY?.() ?? 1);
@@ -100,6 +449,104 @@ function getNodeGuideBounds(
     y: position.y,
     width: Math.max(1, width || fallbackWidth),
     height: Math.max(1, height || fallbackHeight),
+  };
+}
+
+function isPointInsideBounds(point: ViewportPoint, bounds: GuideBounds) {
+  return (
+    point.x >= bounds.x &&
+    point.x <= bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y <= bounds.y + bounds.height
+  );
+}
+
+function isCanvasElementTarget(target: Konva.Node | null | undefined) {
+  if (!target) return false;
+
+  const targetId = target.id?.();
+  return Boolean(targetId && targetId !== "" && targetId !== "Transformer");
+}
+
+function isCornerAnchor(anchor: string | null) {
+  return anchor === "top-left" || anchor === "top-right" || anchor === "bottom-left" || anchor === "bottom-right";
+}
+
+function measureTextBox(element: CanvasElement, width: number, fontSize: number) {
+  const probe = new Konva.Text({
+    text:
+      element.textTransform === "uppercase"
+        ? (element.content || "").toUpperCase()
+        : element.content || "",
+    width: Math.max(1, width),
+    fontSize,
+    fontFamily: element.fontFamily || "sans-serif",
+    fontStyle: mapFontStyleToKonva(element.fontWeight, element.fontStyle),
+    lineHeight: element.lineHeight || 1.2,
+    letterSpacing: element.letterSpacing || 0,
+    wrap: "word",
+    padding: 0,
+  });
+
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(probe.height())),
+  };
+}
+
+function getImageAsset(src: string) {
+  const cached = imageAssetCache.get(src);
+  if (cached) return cached;
+
+  const image = new window.Image();
+  image.src = src;
+  imageAssetCache.set(src, image);
+  return image;
+}
+
+function getVideoAsset(src: string) {
+  const cached = videoAssetCache.get(src);
+  if (cached) return cached;
+
+  const video = document.createElement("video");
+  video.src = src;
+  video.muted = true;
+  video.loop = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.crossOrigin = "anonymous";
+  videoAssetCache.set(src, video);
+  return video;
+}
+
+function getCoverCrop(image: HTMLImageElement, width: number, height: number) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+
+  if (!sourceWidth || !sourceHeight || width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = width / height;
+
+  if (sourceRatio > targetRatio) {
+    const cropWidth = sourceHeight * targetRatio;
+    return {
+      x: (sourceWidth - cropWidth) / 2,
+      y: 0,
+      width: cropWidth,
+      height: sourceHeight,
+    };
+  }
+
+  const cropHeight = sourceWidth / targetRatio;
+  return {
+    x: 0,
+    y: (sourceHeight - cropHeight) / 2,
+    width: sourceWidth,
+    height: cropHeight,
   };
 }
 
@@ -193,11 +640,15 @@ function getRenderableLayer(element: CanvasElement) {
   };
 }
 
-export const CanvasStage: React.FC<CanvasStageProps> = ({
+const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   elements,
   selectedElementIds,
   onSelectElement,
   onUpdateElement,
+  onPreviewElement,
+  onClearPreviewElement,
+  autoEditElementId,
+  onAutoEditHandled,
   zoom,
   onZoomChange,
   canvasSize,
@@ -207,18 +658,39 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   bleedEnabled,
   isMobileViewport = false,
   bottomInset = 96,
+  activeTool = "select",
+  drawSettings = { tool: "pencil", color: "#000000", brushSize: 10 },
+  finishDrawingRequest = 0,
+  onDrawingCommitted,
 }) => {
+  const requestedTextEditId = useTextEditStore((state) => state.requestedElementId);
+  const textEditRequestKey = useTextEditStore((state) => state.requestKey);
+  const consumeTextEditRequest = useTextEditStore((state) => state.consumeTextEditRequest);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
   const konvaContainerRef = useRef<HTMLDivElement>(null);
+  const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pinchSessionRef = useRef<PinchSession | null>(null);
+  const fitZoomRef = useRef(zoom);
+  const hasManualMobileTransformRef = useRef(false);
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const layerRef = useRef<Konva.Layer | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const gridLayerRef = useRef<Konva.Layer | null>(null);
   const guideLayerRef = useRef<Konva.Layer | null>(null);
+  const transformSessionRef = useRef<TransformSession | null>(null);
+  const transformPreviewFrameRef = useRef<number | null>(null);
+  const pendingTransformPreviewRef = useRef<{ id: string; updates: Partial<CanvasElement> } | null>(null);
+  const lastPreviewSyncAtRef = useRef(0);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
+  const elementsRef = useRef(elements);
+  const selectedElementIdsRef = useRef(selectedElementIds);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const isDrawingRef = useRef(false);
+  const lastDrawPointRef = useRef<{ x: number; y: number } | null>(null);
+  const hasDrawingRef = useRef(false);
+  const handledFinishRequestRef = useRef(0);
   const inlineEditorRef = useRef<InlineEditorState | null>(null);
   const editingTextRef = useRef("");
   const isClosingRef = useRef(false);
@@ -229,8 +701,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   );
   const [editingText, setEditingText] = useState("");
   const [pulseProgress, setPulseProgress] = useState(0);
+  const [mobilePan, setMobilePan] = useState<ViewportPoint>({ x: 0, y: 0 });
+
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
+
+  useEffect(() => {
+    selectedElementIdsRef.current = selectedElementIds;
+  }, [selectedElementIds]);
 
   const scale = zoom / 100;
+  const isDrawMode = activeTool === "draw";
+  const stagePressEvent = isMobileViewport ? "touchstart" : "mousedown";
+  const stageActivateEvent = isMobileViewport ? "tap" : "click";
+  const stageDoubleActivateEvent = isMobileViewport ? "dbltap" : "dblclick";
   const pulseFrequency =
     elements
       .filter((element) => element.visible !== false)
@@ -244,6 +729,278 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     guideLayer.destroyChildren();
     guideLayer.draw();
   }, []);
+
+  const drawTransformGhost = useCallback((bounds: GuideBounds) => {
+    const guideLayer = guideLayerRef.current;
+    if (!guideLayer) return;
+
+    guideLayer.destroyChildren();
+    guideLayer.add(
+      new Konva.Rect({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        stroke: TRANSFORM_GHOST_COLOR,
+        strokeWidth: 1,
+        dash: [6, 5],
+        fill: "rgba(59, 130, 246, 0.04)",
+        listening: false,
+      }),
+    );
+    guideLayer.draw();
+  }, []);
+
+  const flushTransformPreview = useCallback(() => {
+    transformPreviewFrameRef.current = null;
+    if (!pendingTransformPreviewRef.current) return;
+
+    const now = performance.now();
+    if (now - lastPreviewSyncAtRef.current < PREVIEW_SYNC_INTERVAL_MS) {
+      transformPreviewFrameRef.current = requestAnimationFrame(flushTransformPreview);
+      return;
+    }
+
+    const { id, updates } = pendingTransformPreviewRef.current;
+    pendingTransformPreviewRef.current = null;
+    lastPreviewSyncAtRef.current = now;
+    onPreviewElement?.(id, updates);
+  }, [onPreviewElement]);
+
+  const scheduleTransformPreview = useCallback(
+    (id: string, updates: Partial<CanvasElement>) => {
+      pendingTransformPreviewRef.current = { id, updates };
+      if (transformPreviewFrameRef.current != null) return;
+
+      transformPreviewFrameRef.current = requestAnimationFrame(flushTransformPreview);
+    },
+    [flushTransformPreview],
+  );
+
+  const clearDrawingCanvas = useCallback(() => {
+    const canvas = drawingCanvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    isDrawingRef.current = false;
+    lastDrawPointRef.current = null;
+    hasDrawingRef.current = false;
+  }, []);
+
+  const getCanvasPointerPosition = useCallback((): ViewportPoint | null => {
+    const stage = stageRef.current;
+    const pointer = stage?.getPointerPosition();
+    if (!pointer) return null;
+
+    return {
+      x: pointer.x / Math.max(scale, 0.001),
+      y: pointer.y / Math.max(scale, 0.001),
+    };
+  }, [scale]);
+
+  const getViewportMetrics = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return null;
+
+    const rect = container.getBoundingClientRect();
+    const usableHeight = Math.max(1, rect.height - (isMobileViewport ? bottomInset : 0));
+
+    return {
+      rect,
+      width: rect.width,
+      height: rect.height,
+      usableHeight,
+    };
+  }, [bottomInset, isMobileViewport]);
+
+  const getCenteredMobilePan = useCallback(
+    (nextZoom: number): ViewportPoint => {
+      const metrics = getViewportMetrics();
+      if (!metrics) return { x: 0, y: 0 };
+
+      const nextScale = nextZoom / 100;
+      const contentWidth = canvasSize.width * nextScale;
+      const contentHeight = canvasSize.height * nextScale;
+
+      return {
+        x: clampViewportOffset(
+          (metrics.width - contentWidth) / 2,
+          metrics.width,
+          contentWidth,
+          MOBILE_VIEWPORT_GUTTER,
+        ),
+        y: clampViewportOffset(
+          (metrics.usableHeight - contentHeight) / 2,
+          metrics.usableHeight,
+          contentHeight,
+          MOBILE_VIEWPORT_GUTTER,
+        ),
+      };
+    },
+    [canvasSize.height, canvasSize.width, getViewportMetrics],
+  );
+
+  const clampMobilePan = useCallback(
+    (nextPan: ViewportPoint, nextZoom: number): ViewportPoint => {
+      const metrics = getViewportMetrics();
+      if (!metrics) return nextPan;
+
+      const nextScale = nextZoom / 100;
+      const contentWidth = canvasSize.width * nextScale;
+      const contentHeight = canvasSize.height * nextScale;
+
+      return {
+        x: clampViewportOffset(
+          nextPan.x,
+          metrics.width,
+          contentWidth,
+          MOBILE_VIEWPORT_GUTTER,
+        ),
+        y: clampViewportOffset(
+          nextPan.y,
+          metrics.usableHeight,
+          contentHeight,
+          MOBILE_VIEWPORT_GUTTER,
+        ),
+      };
+    },
+    [canvasSize.height, canvasSize.width, getViewportMetrics],
+  );
+
+  const getRelativeViewportPoint = useCallback(
+    (point: ViewportPoint): ViewportPoint | null => {
+      const metrics = getViewportMetrics();
+      if (!metrics) return null;
+
+      return {
+        x: point.x - metrics.rect.left,
+        y: point.y - metrics.rect.top,
+      };
+    },
+    [getViewportMetrics],
+  );
+
+  const syncMobileZoomTransform = useCallback(
+    (nextZoom: number, nextPan?: ViewportPoint, options?: { manual?: boolean }) => {
+      const clampedZoom = clampZoomPercent(nextZoom, true);
+      const resolvedPan = clampMobilePan(nextPan ?? mobilePan, clampedZoom);
+
+      if (options?.manual) {
+        hasManualMobileTransformRef.current = true;
+      }
+
+      setMobilePan((currentPan) => {
+        if (currentPan.x === resolvedPan.x && currentPan.y === resolvedPan.y) {
+          return currentPan;
+        }
+        return resolvedPan;
+      });
+
+      if (clampedZoom !== zoom) {
+        onZoomChange(clampedZoom);
+      }
+    },
+    [clampMobilePan, mobilePan, onZoomChange, zoom],
+  );
+
+  const getDrawPoint = useCallback((clientX: number, clientY: number) => {
+    const canvas = drawingCanvasRef.current;
+    if (!canvas) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }, []);
+
+  const stampCircleBrush = useCallback(
+    (context: CanvasRenderingContext2D, point: { x: number; y: number }, erase: boolean) => {
+      const radius = Math.max(1, drawSettings.brushSize / 2);
+      context.save();
+      context.globalCompositeOperation = erase ? "destination-out" : "source-over";
+      context.fillStyle = drawSettings.color;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    },
+    [drawSettings.brushSize, drawSettings.color],
+  );
+
+  const stampSprayBrush = useCallback(
+    (context: CanvasRenderingContext2D, point: { x: number; y: number }, erase: boolean) => {
+      const radius = Math.max(4, drawSettings.brushSize * 0.9);
+      const density = Math.max(12, Math.round(drawSettings.brushSize * 2.2));
+
+      context.save();
+      context.globalCompositeOperation = erase ? "destination-out" : "source-over";
+      context.fillStyle = drawSettings.color;
+
+      for (let index = 0; index < density; index += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * radius;
+        const dotSize = Math.max(0.8, Math.random() * (drawSettings.brushSize / 5));
+        const x = point.x + Math.cos(angle) * distance;
+        const y = point.y + Math.sin(angle) * distance;
+
+        context.beginPath();
+        context.arc(x, y, dotSize, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.restore();
+    },
+    [drawSettings.brushSize, drawSettings.color],
+  );
+
+  const drawSegment = useCallback(
+    (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const canvas = drawingCanvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return;
+
+      const erase = drawSettings.tool === "eraser";
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const distance = Math.max(Math.hypot(dx, dy), 1);
+      const steps = Math.max(1, Math.ceil(distance / Math.max(2, drawSettings.brushSize / 2)));
+
+      if (drawSettings.tool === "pencil" || drawSettings.tool === "eraser") {
+        context.save();
+        context.globalCompositeOperation = erase ? "destination-out" : "source-over";
+        context.strokeStyle = drawSettings.color;
+        context.lineWidth = drawSettings.brushSize;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.beginPath();
+        context.moveTo(from.x, from.y);
+        context.lineTo(to.x, to.y);
+        context.stroke();
+        context.restore();
+      } else {
+        for (let step = 0; step <= steps; step += 1) {
+          const progress = step / steps;
+          const point = {
+            x: from.x + dx * progress,
+            y: from.y + dy * progress,
+          };
+
+          if (drawSettings.tool === "circle") {
+            stampCircleBrush(context, point, false);
+          } else {
+            stampSprayBrush(context, point, false);
+          }
+        }
+      }
+
+      hasDrawingRef.current = true;
+    },
+    [drawSettings, stampCircleBrush, stampSprayBrush],
+  );
 
   const drawAlignmentGuides = useCallback(
     (verticalGuide?: number, horizontalGuide?: number) => {
@@ -309,6 +1066,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         y: pos.y,
         width,
         height,
+        nodeOpacity: node.opacity(),
         fontSize: element.fontSize || 24,
         rotation: node.rotation() || 0,
         fontFamily: element.fontFamily || "sans-serif",
@@ -316,6 +1074,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         fontStyle: element.fontStyle || "normal",
         color: element.color || "#000000",
         lineHeight: element.lineHeight || 1.2,
+        letterSpacing: element.letterSpacing || 0,
         textAlign: element.textAlign || "left",
         textTransform: element.textTransform || "none",
       };
@@ -324,43 +1083,60 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   );
 
   const syncInlineEditorSize = useCallback(
-    (editor: InlineEditorState, textarea: HTMLTextAreaElement) => {
-      textarea.style.width = "auto";
-      textarea.style.height = "auto";
+    (
+      editor: InlineEditorState,
+      textarea: HTMLTextAreaElement,
+      textValue: string = textarea.value,
+    ) => {
+      const constrainedWidth = Math.max(20, Math.round(editor.width));
+      const canvasScale = Math.max(scale, 0.001);
+      const canvasWidth = Math.max(1, Math.round(constrainedWidth / canvasScale));
+      const measured = measureTextBox(
+        {
+          id: editor.id,
+          type: "text",
+          x: 0,
+          y: 0,
+          width: canvasWidth,
+          height: Math.max(1, Math.round(editor.height / canvasScale)),
+          content: textValue,
+          fontSize: editor.fontSize,
+          fontFamily: editor.fontFamily,
+          fontWeight: editor.fontWeight,
+          fontStyle: editor.fontStyle,
+          lineHeight: editor.lineHeight,
+          letterSpacing: editor.letterSpacing,
+          textAlign: editor.textAlign,
+          textTransform: editor.textTransform,
+        },
+        canvasWidth,
+        editor.fontSize,
+      );
+      const nextHeight = Math.max(20, Math.round(measured.height * canvasScale));
 
-      const nextWidth = Math.max(editor.width, textarea.scrollWidth + 2);
-      const nextHeight = Math.max(editor.height, textarea.scrollHeight);
-
-      textarea.style.width = `${nextWidth}px`;
+      textarea.style.width = `${constrainedWidth}px`;
       textarea.style.height = `${nextHeight}px`;
 
       return {
-        width: nextWidth,
+        width: constrainedWidth,
         height: nextHeight,
       };
     },
-    [],
+    [scale],
   );
 
   const startInlineEditing = useCallback(
     (element: CanvasElement, node: Konva.Text) => {
       // If already editing, commit current edit first
       if (inlineEditorRef.current && !isClosingRef.current) {
-        isClosingRef.current = true;
-        const prevId = inlineEditorRef.current.id;
-        const prevTextarea = textInputRef.current;
-        const prevText = prevTextarea?.value ?? editingTextRef.current;
-        const prevNode = shapeRefs.current.get(prevId);
-        if (prevNode instanceof Konva.Text) prevNode.show();
-        onUpdateElement(prevId, { content: prevText });
-        isClosingRef.current = false;
+        closeInlineEditingRef.current(true);
       }
-
-      node.hide();
-      layerRef.current?.draw();
 
       const nextEditingText = element.content || "";
       const nextInlineEditor = getInlineEditorState(element, node);
+
+      node.visible(false);
+      layerRef.current?.draw();
 
       editingTextRef.current = nextEditingText;
       inlineEditorRef.current = nextInlineEditor;
@@ -368,7 +1144,23 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       setInlineEditor(nextInlineEditor);
       onSelectElement(element.id);
     },
-    [getInlineEditorState, onSelectElement, onUpdateElement],
+    [getInlineEditorState, onSelectElement],
+  );
+
+  const startInlineEditingByElementId = useCallback(
+    (elementId: string) => {
+      const element = elementsRef.current.find(
+        (candidate) => candidate.id === elementId && candidate.type === "text",
+      );
+      if (!element) return false;
+
+      const node = shapeRefs.current.get(elementId);
+      if (!(node instanceof Konva.Text)) return false;
+
+      startInlineEditing(element, node);
+      return true;
+    },
+    [startInlineEditing],
   );
 
   const closeInlineEditing = useCallback(
@@ -393,7 +1185,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       // Show the Konva text node immediately so it's visible before React re-renders
       const node = shapeRefs.current.get(currentInlineEditor.id);
       if (node instanceof Konva.Text) {
-        node.show();
+        node.visible(true);
+        node.opacity(currentInlineEditor.nodeOpacity);
       }
       layerRef.current?.draw();
 
@@ -463,12 +1256,32 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
     const transformer = new Konva.Transformer({
       rotateEnabled: true,
+      enabledAnchors: [...DEFAULT_TRANSFORM_ANCHORS],
+      flipEnabled: false,
+      centeredScaling: false,
+      keepRatio: false,
+      shouldOverdrawWholeArea: false,
+      anchorSize: 24,
+      borderStroke: "#3b82f6",
+      borderStrokeWidth: 1,
+      borderDash: [4, 4],
+      anchorStroke: "#3b82f6",
+      anchorStrokeWidth: 1.5,
+      anchorFill: "#ffffff",
+      anchorCornerRadius: 999,
       boundBoxFunc: (oldBox, newBox) => {
-        if (newBox.width < 20 || newBox.height < 20) {
+        if (newBox.width < MIN_TRANSFORM_SIZE || newBox.height < MIN_TRANSFORM_SIZE) {
           return oldBox;
         }
         return newBox;
       },
+    });
+
+    transformer.anchorStyleFunc((anchor) => {
+      anchor.opacity(1);
+      anchor.stroke("#3b82f6");
+      anchor.fill("#ffffff");
+      anchor.cornerRadius(999);
     });
 
     layer.add(transformer);
@@ -479,17 +1292,62 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     transformerRef.current = transformer;
     guideLayerRef.current = guideLayer;
 
-    stage.on(
-      "click tap",
-      (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-        if (e.target === stage) {
-          clearAlignmentGuides();
-          onSelectElement(null);
+    const handleEmptyCanvasInteraction = (
+      e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+    ) => {
+        const target = e.target;
+        const clickedAnchor =
+          target && typeof target.hasName === "function" && target.hasName("_anchor");
+        const clickedElement = isCanvasElementTarget(target);
+
+        if (clickedAnchor || clickedElement) {
+          return;
         }
-      },
-    );
+
+        if (inlineEditorRef.current) {
+          closeInlineEditingRef.current(true);
+          return;
+        }
+
+        const pointer = stage.getPointerPosition();
+        const selectedElementId =
+          selectedElementIdsRef.current.length === 1
+            ? selectedElementIdsRef.current[0]
+            : null;
+
+        if (pointer && selectedElementId) {
+          const selectedElement = elementsRef.current.find(
+            (element) => element.id === selectedElementId,
+          );
+          const node = shapeRefs.current.get(selectedElementId);
+
+          if (selectedElement?.type === "text" && node instanceof Konva.Text) {
+            const canvasPoint = {
+              x: pointer.x / Math.max(scale, 0.001),
+              y: pointer.y / Math.max(scale, 0.001),
+            };
+            const bounds = getNodeGuideBounds(
+              node,
+              selectedElement.width,
+              selectedElement.height,
+            );
+
+            if (isPointInsideBounds(canvasPoint, bounds)) {
+              return;
+            }
+          }
+        }
+
+        clearAlignmentGuides();
+        onSelectElement(null);
+    };
+
+    stage.on(stagePressEvent, handleEmptyCanvasInteraction);
+    stage.on(stageActivateEvent, handleEmptyCanvasInteraction);
 
     return () => {
+      stage.off(stagePressEvent, handleEmptyCanvasInteraction);
+      stage.off(stageActivateEvent, handleEmptyCanvasInteraction);
       stage.destroy();
       stageRef.current = null;
       gridLayerRef.current = null;
@@ -498,11 +1356,46 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       guideLayerRef.current = null;
       currentShapeRefs.clear();
     };
-  }, [canvasSize.width, canvasSize.height, clearAlignmentGuides, onSelectElement, scale]);
+  }, [canvasSize.width, canvasSize.height, clearAlignmentGuides, onSelectElement, scale, stageActivateEvent, stagePressEvent]);
+
+  useEffect(() => {
+    return () => {
+      if (transformPreviewFrameRef.current != null) {
+        cancelAnimationFrame(transformPreviewFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     syncStageScale();
   }, [syncStageScale]);
+
+  useEffect(() => {
+    const canvas = drawingCanvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = canvasSize.width;
+    canvas.height = canvasSize.height;
+    clearDrawingCanvas();
+  }, [canvasSize.height, canvasSize.width, clearDrawingCanvas]);
+
+  useEffect(() => {
+    if (isDrawMode) return;
+    clearDrawingCanvas();
+  }, [clearDrawingCanvas, isDrawMode]);
+
+  useEffect(() => {
+    if (!finishDrawingRequest || handledFinishRequestRef.current === finishDrawingRequest) {
+      return;
+    }
+
+    handledFinishRequestRef.current = finishDrawingRequest;
+    const canvas = drawingCanvasRef.current;
+    const dataUrl = canvas && hasDrawingRef.current ? canvas.toDataURL("image/png") : null;
+
+    clearDrawingCanvas();
+    onDrawingCommitted?.(dataUrl);
+  }, [clearDrawingCanvas, finishDrawingRequest, onDrawingCommitted]);
 
   // Re-position the inline editor when zoom changes (but not on every elements change)
   useEffect(() => {
@@ -540,16 +1433,23 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       shapeRefs.current.set(element.id, shape);
 
       shape.on(
-        "click tap",
+        stagePressEvent,
+        (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+          onSelectElement(element.id, Boolean((e.evt as MouseEvent)?.shiftKey));
+        },
+      );
+
+      shape.on(
+        stageActivateEvent,
         (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
           e.cancelBubble = true;
 
           if (element.type === "text" && shape instanceof Konva.Text) {
-            const alreadyOnlySelected =
-              selectedElementIds.length === 1 &&
-              selectedElementIds[0] === element.id;
+            const isAlreadyOnlySelected =
+              selectedElementIdsRef.current.length === 1 &&
+              selectedElementIdsRef.current[0] === element.id;
 
-            if (alreadyOnlySelected) {
+            if (isAlreadyOnlySelected) {
               startInlineEditing(element, shape);
               return;
             }
@@ -560,7 +1460,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       );
 
       if (element.type === "text" && shape instanceof Konva.Text) {
-        shape.on("dblclick dbltap", () => {
+        shape.on(stageDoubleActivateEvent, (e) => {
+          e.cancelBubble = true;
           startInlineEditing(element, shape);
         });
       }
@@ -616,39 +1517,206 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
       });
 
-      shape.on("transformend", () => {
-        clearAlignmentGuides();
-        const pos = shape.position();
+      shape.on("transformstart", () => {
+        const transformerInstance = transformerRef.current;
+        const activeAnchor = transformerInstance?.getActiveAnchor() ?? null;
+        const isCornerHandle = isCornerAnchor(activeAnchor);
         const motion = getActiveAnimationState(element);
 
-        let nextX = pos.x - motion.x;
-        let nextY = pos.y - motion.y;
-        let nextWidth: number;
-        let nextHeight: number;
+        transformSessionRef.current = {
+          activeAnchor,
+          originalElement: element,
+          isCornerHandle,
+          originalBounds: {
+            x: element.x + motion.x,
+            y: element.y + motion.y,
+            width: element.width,
+            height: element.height,
+          },
+          startPointer: getCanvasPointerPosition(),
+          aspectRatio: element.width / Math.max(1, element.height),
+        };
 
-        if (shape instanceof Konva.Group) {
-          nextWidth = shape.width();
-          nextHeight = shape.height();
-        } else {
-          nextWidth = (shape.width() || 0) * (shape.scaleX?.() || 1);
-          nextHeight = (shape.height() || 0) * (shape.scaleY?.() || 1);
+        lastPreviewSyncAtRef.current = 0;
+        transformerInstance?.keepRatio(isCornerHandle);
+        drawTransformGhost(getNodeGuideBounds(shape, element.width, element.height));
+        onPreviewElement?.(element.id, {
+          x: element.x,
+          y: element.y,
+          width: element.width,
+          height: element.height,
+          ...(element.type === "text" && element.fontSize ? { fontSize: element.fontSize } : {}),
+        });
+      });
+
+      shape.on("transform", () => {
+        const session = transformSessionRef.current;
+        if (!session) return;
+
+        const rawBounds = getNodeGuideBounds(shape, element.width, element.height);
+        let previewBounds = rawBounds;
+
+        let previewWidth = rawBounds.width;
+        let previewHeight = rawBounds.height;
+        let previewFontSize = session.originalElement.fontSize;
+
+        if (session.originalElement.type === "text") {
+          const pointer = getCanvasPointerPosition();
+          const textPreview = pointer
+            ? getTextTransformPreview(session, pointer)
+            : {
+                bounds: rawBounds,
+                fontSize: session.originalElement.fontSize || 24,
+              };
+          previewBounds = textPreview.bounds;
+          previewWidth = textPreview.bounds.width;
+          previewHeight = textPreview.bounds.height;
+          previewFontSize = textPreview.fontSize;
+        }
+
+        if (session.originalElement.type === "image") {
+          previewBounds = rawBounds;
+          previewWidth = previewBounds.width;
+          previewHeight = previewBounds.height;
+        }
+
+        drawTransformGhost(previewBounds);
+
+        const rawRight = previewBounds.x + previewBounds.width;
+        const rawBottom = previewBounds.y + previewBounds.height;
+        const activeAnchor = session.activeAnchor ?? "bottom-right";
+        const motion = getActiveAnimationState(session.originalElement);
+
+        let previewX = previewBounds.x;
+        let previewY = previewBounds.y;
+
+        if (activeAnchor.includes("left")) {
+          previewX = rawRight - previewWidth;
+        } else if (!activeAnchor.includes("right")) {
+          previewX = previewBounds.x + (previewBounds.width - previewWidth) / 2;
+        }
+
+        if (activeAnchor.startsWith("top")) {
+          previewY = rawBottom - previewHeight;
+        } else if (!activeAnchor.startsWith("bottom")) {
+          previewY = previewBounds.y + (previewBounds.height - previewHeight) / 2;
+        }
+
+        previewX -= motion.x;
+        previewY -= motion.y;
+
+        scheduleTransformPreview(session.originalElement.id, {
+          x: Math.round(previewX),
+          y: Math.round(previewY),
+          width: Math.round(previewWidth),
+          height: Math.round(previewHeight),
+          ...(session.originalElement.type === "text" && previewFontSize
+            ? { fontSize: previewFontSize }
+            : {}),
+        });
+      });
+
+      shape.on("transformend", () => {
+        const session = transformSessionRef.current;
+        transformSessionRef.current = null;
+        transformerRef.current?.keepRatio(false);
+
+        const motion = getActiveAnimationState(element);
+
+        const rawBounds = getNodeGuideBounds(shape, element.width, element.height);
+        let finalBounds = rawBounds;
+        let nextWidth = rawBounds.width;
+        let nextHeight = rawBounds.height;
+        let nextFontSize = element.fontSize;
+
+        if (!(shape instanceof Konva.Group)) {
           shape.scaleX(1);
           shape.scaleY(1);
         }
+
+        if (session?.activeAnchor && element.type === "text") {
+          if (session.isCornerHandle) {
+            // Corner: scale fontSize by height ratio
+            const scaleFactor = rawBounds.height / Math.max(1, session.originalBounds.height);
+            nextFontSize = Math.max(8, Math.round((session.originalElement.fontSize || 24) * scaleFactor));
+            nextWidth = Math.max(40, Math.round(rawBounds.width));
+            const measured = measureTextBox(session.originalElement, nextWidth, nextFontSize);
+            nextWidth = measured.width;
+            nextHeight = measured.height;
+          } else if (
+            session.activeAnchor === "top-center" ||
+            session.activeAnchor === "bottom-center"
+          ) {
+            const scaleFactor = rawBounds.height / Math.max(1, session.originalBounds.height);
+            nextFontSize = Math.max(8, Math.round((session.originalElement.fontSize || 24) * scaleFactor));
+            nextWidth = Math.max(40, Math.round(session.originalElement.width * scaleFactor));
+            const measured = measureTextBox(session.originalElement, nextWidth, nextFontSize);
+            nextWidth = measured.width;
+            nextHeight = measured.height;
+          } else {
+            const affectsWidth = session.activeAnchor.includes("left") || session.activeAnchor.includes("right");
+            nextWidth = affectsWidth ? Math.max(40, Math.round(rawBounds.width)) : session.originalElement.width;
+            const measured = measureTextBox(session.originalElement, nextWidth, session.originalElement.fontSize || 24);
+            nextHeight = measured.height;
+            nextFontSize = session.originalElement.fontSize || 24;
+          }
+        }
+
+        if (session?.activeAnchor && element.type === "image") {
+          finalBounds = rawBounds;
+          nextWidth = finalBounds.width;
+          nextHeight = finalBounds.height;
+        }
+
+        const rawRight = finalBounds.x + finalBounds.width;
+        const rawBottom = finalBounds.y + finalBounds.height;
+        const activeAnchor = session?.activeAnchor ?? "bottom-right";
+
+        let nextX = finalBounds.x;
+        let nextY = finalBounds.y;
+
+        if (activeAnchor.includes("left")) {
+          nextX = rawRight - nextWidth;
+        } else if (!activeAnchor.includes("right")) {
+          nextX = finalBounds.x + (finalBounds.width - nextWidth) / 2;
+        }
+
+        if (activeAnchor.startsWith("top")) {
+          nextY = rawBottom - nextHeight;
+        } else if (!activeAnchor.startsWith("bottom")) {
+          nextY = finalBounds.y + (finalBounds.height - nextHeight) / 2;
+        }
+
+        nextX -= motion.x;
+        nextY -= motion.y;
 
         if (gridEnabled) {
           nextX = snap(nextX, GRID_SIZE);
           nextY = snap(nextY, GRID_SIZE);
           nextWidth = Math.max(GRID_SIZE, snap(nextWidth, GRID_SIZE));
           nextHeight = Math.max(GRID_SIZE, snap(nextHeight, GRID_SIZE));
-          shape.position({ x: nextX, y: nextY });
         }
+
+        shape.position({ x: nextX, y: nextY });
+        if (shape instanceof Konva.Text || shape instanceof Konva.Image || shape instanceof Konva.Rect) {
+          shape.width(nextWidth);
+          shape.height(nextHeight);
+        }
+        if (shape instanceof Konva.Image) {
+          shape.scale({ x: 1, y: 1 });
+          applyImageNodeCrop(shape, nextWidth, nextHeight);
+          layer.batchDraw();
+        }
+
+        clearAlignmentGuides();
+        onClearPreviewElement?.(element.id);
 
         onUpdateElement(element.id, {
           x: Math.round(nextX),
           y: Math.round(nextY),
           width: Math.round(nextWidth),
           height: Math.round(nextHeight),
+          ...(element.type === "text" && nextFontSize ? { fontSize: nextFontSize } : {}),
           rotation: Math.round(shape.rotation() || 0),
         });
 
@@ -657,24 +1725,15 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         }
       });
 
-      if (inlineEditor?.id === element.id && shape instanceof Konva.Text) {
-        shape.hide();
+      if (
+        shape instanceof Konva.Text &&
+        (inlineEditor?.id === element.id || autoEditElementId === element.id)
+      ) {
+        shape.visible(false);
+      } else if (shape instanceof Konva.Text) {
+        shape.visible(true);
       }
     });
-
-    if (selectedElementIds.length > 0) {
-      const selectedNodes = selectedElementIds
-        .map((id) => shapeRefs.current.get(id))
-        .filter(Boolean) as Konva.Node[];
-
-      if (transformer && selectedNodes.length > 0) {
-        transformer.nodes(selectedNodes);
-      } else {
-        transformer.nodes([]);
-      }
-    } else {
-      transformer.nodes([]);
-    }
 
     layer.draw();
   }, [
@@ -682,7 +1741,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     clearAlignmentGuides,
     drawAlignmentGuides,
     elements,
-    selectedElementIds,
+    autoEditElementId,
     inlineEditor?.id,
     onSelectElement,
     onUpdateElement,
@@ -690,7 +1749,72 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     getInlineEditorState,
     alignmentGuides,
     gridEnabled,
+    drawTransformGhost,
+    onPreviewElement,
+    onClearPreviewElement,
+    scheduleTransformPreview,
+    getCanvasPointerPosition,
   ]);
+
+  useEffect(() => {
+    const layer = layerRef.current;
+    const transformer = transformerRef.current;
+    if (!layer || !transformer) return;
+
+    const isInlineEditingActive = Boolean(inlineEditor?.id);
+    const selectedElementId = selectedElementIds.length === 1 ? selectedElementIds[0] : null;
+    const selectedElement = selectedElementId
+      ? elements.find((element) => element.id === selectedElementId) ?? null
+      : null;
+    const isSingleSelectedText = Boolean(
+      selectedElement && selectedElement.type === "text" && !isInlineEditingActive,
+    );
+    const selectedTextNode = selectedElementId
+      ? shapeRefs.current.get(selectedElementId)
+      : null;
+
+    transformer.shouldOverdrawWholeArea(false);
+
+    if (selectedElementIds.length > 0 && !isInlineEditingActive) {
+      const selectedNodes = selectedElementIds
+        .map((id) => shapeRefs.current.get(id))
+        .filter(Boolean) as Konva.Node[];
+
+      transformer.nodes(selectedNodes.length > 0 ? selectedNodes : []);
+    } else {
+      transformer.nodes([]);
+    }
+
+    transformer.enabledAnchors([
+      ...(isSingleSelectedText ? TEXT_TRANSFORM_ANCHORS : DEFAULT_TRANSFORM_ANCHORS),
+    ]);
+
+    const transformerBack = transformer.findOne(".back");
+    const transformerInlineEditEvent = `${stageActivateEvent}.inlineEdit`;
+    transformerBack?.off(transformerInlineEditEvent);
+
+    if (
+      transformerBack &&
+      isSingleSelectedText &&
+      selectedElement?.type === "text" &&
+      selectedTextNode instanceof Konva.Text
+    ) {
+      transformerBack.listening(!isInlineEditingActive);
+      transformerBack.on(transformerInlineEditEvent, (event) => {
+        event.cancelBubble = true;
+        startInlineEditingByElementId(selectedElement.id);
+      });
+    } else {
+      transformerBack?.listening(!isInlineEditingActive);
+    }
+
+    transformer.find("._anchor").forEach((anchor) => {
+      anchor.listening(!isInlineEditingActive);
+    });
+
+    transformer.forceUpdate();
+    layer.draw();
+  }, [elements, inlineEditor?.id, selectedElementIds, stageActivateEvent, startInlineEditingByElementId]);
 
   useEffect(() => {
     if (!alignmentGuides) {
@@ -807,6 +1931,28 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     }
   }, [editingText, inlineEditor, syncInlineEditorSize]);
 
+  useEffect(() => {
+    const resolvedAutoEditElementId = requestedTextEditId ?? autoEditElementId;
+
+    if (!resolvedAutoEditElementId || inlineEditorRef.current) return;
+
+    if (!startInlineEditingByElementId(resolvedAutoEditElementId)) return;
+
+    if (requestedTextEditId === resolvedAutoEditElementId) {
+      consumeTextEditRequest(textEditRequestKey);
+    } else {
+      onAutoEditHandled?.(resolvedAutoEditElementId);
+    }
+  }, [
+    autoEditElementId,
+    consumeTextEditRequest,
+    elements,
+    onAutoEditHandled,
+    requestedTextEditId,
+    startInlineEditingByElementId,
+    textEditRequestKey,
+  ]);
+
   const handleEditingChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setEditingText(e.target.value);
@@ -860,13 +2006,32 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     const scaleY = usableHeight / canvasSize.height;
     const fitZoom = Math.min(scaleX, scaleY) * 100;
 
-    const nextZoom = Math.max(
-      isMobileViewport ? 10 : 20,
+    const rawFitZoom = Math.max(
+      isMobileViewport ? MIN_ZOOM_PERCENT : 20,
       Math.min(Math.round(fitZoom), isMobileViewport ? 100 : 140),
     );
+    const nextZoom = clampZoomPercent(rawFitZoom, isMobileViewport);
 
+    fitZoomRef.current = nextZoom;
     onZoomChange(nextZoom);
-  }, [bottomInset, canvasSize.width, canvasSize.height, isMobileViewport, onZoomChange]);
+
+    if (isMobileViewport) {
+      setMobilePan((currentPan) => {
+        if (!hasManualMobileTransformRef.current) {
+          return getCenteredMobilePan(nextZoom);
+        }
+        return clampMobilePan(currentPan, nextZoom);
+      });
+    }
+  }, [
+    bottomInset,
+    canvasSize.width,
+    canvasSize.height,
+    clampMobilePan,
+    getCenteredMobilePan,
+    isMobileViewport,
+    onZoomChange,
+  ]);
 
   useLayoutEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -903,6 +2068,135 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     };
   }, [fitToScreen]);
 
+  useEffect(() => {
+    if (!isMobileViewport) return;
+
+    setMobilePan((currentPan) => {
+      if (!hasManualMobileTransformRef.current) {
+        return getCenteredMobilePan(zoom);
+      }
+      return clampMobilePan(currentPan, zoom);
+    });
+  }, [clampMobilePan, getCenteredMobilePan, isMobileViewport, zoom]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!isMobileViewport || !el) return;
+
+    const preventGesture = (event: Event) => {
+      event.preventDefault();
+    };
+
+    const preventMultiTouch = (event: TouchEvent) => {
+      if (event.touches.length > 1) {
+        event.preventDefault();
+      }
+    };
+
+    el.addEventListener("gesturestart", preventGesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("gesturechange", preventGesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("gestureend", preventGesture, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("touchmove", preventMultiTouch, { passive: false });
+
+    return () => {
+      el.removeEventListener("gesturestart", preventGesture as EventListener);
+      el.removeEventListener("gesturechange", preventGesture as EventListener);
+      el.removeEventListener("gestureend", preventGesture as EventListener);
+      el.removeEventListener("touchmove", preventMultiTouch as EventListener);
+    };
+  }, [isMobileViewport]);
+
+  const handleDrawMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isDrawMode) return;
+
+      const point = getDrawPoint(event.clientX, event.clientY);
+      if (!point) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      isDrawingRef.current = true;
+      lastDrawPointRef.current = point;
+      drawSegment(point, point);
+    },
+    [drawSegment, getDrawPoint, isDrawMode],
+  );
+
+  const handleDrawMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isDrawMode || !isDrawingRef.current) return;
+
+      const point = getDrawPoint(event.clientX, event.clientY);
+      const previous = lastDrawPointRef.current;
+      if (!point || !previous) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      drawSegment(previous, point);
+      lastDrawPointRef.current = point;
+    },
+    [drawSegment, getDrawPoint, isDrawMode],
+  );
+
+  const handleDrawMouseUp = useCallback(() => {
+      if (!isDrawMode) return;
+
+      isDrawingRef.current = false;
+      lastDrawPointRef.current = null;
+    },
+    [isDrawMode],
+  );
+
+  const handleDrawTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLCanvasElement>) => {
+      if (!isDrawMode) return;
+
+      const touch = event.touches[0];
+      if (!touch) return;
+
+      const point = getDrawPoint(touch.clientX, touch.clientY);
+      if (!point) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      isDrawingRef.current = true;
+      lastDrawPointRef.current = point;
+      drawSegment(point, point);
+    },
+    [drawSegment, getDrawPoint, isDrawMode],
+  );
+
+  const handleDrawTouchMove = useCallback(
+    (event: React.TouchEvent<HTMLCanvasElement>) => {
+      if (!isDrawMode || !isDrawingRef.current) return;
+
+      const touch = event.touches[0];
+      const previous = lastDrawPointRef.current;
+      if (!touch || !previous) return;
+
+      const point = getDrawPoint(touch.clientX, touch.clientY);
+      if (!point) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      drawSegment(previous, point);
+      lastDrawPointRef.current = point;
+    },
+    [drawSegment, getDrawPoint, isDrawMode],
+  );
+
+  const handleDrawTouchEnd = useCallback(
+    (event: React.TouchEvent<HTMLCanvasElement>) => {
+      if (!isDrawMode) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      isDrawingRef.current = false;
+      lastDrawPointRef.current = null;
+    },
+    [isDrawMode],
+  );
+
   const showTransparentPreview = canvasBackground === "transparent";
   const wrapperBackground =
     !showTransparentPreview && canvasBackground ? canvasBackground : "#ffffff";
@@ -910,6 +2204,249 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     canvasSize.label === "Instagram Story"
       ? "9 / 16"
       : `${canvasSize.width} / ${canvasSize.height}`;
+
+  const handleMobileViewportTouchStartCapture = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!isMobileViewport || event.touches.length !== 2) return;
+
+      const points = Array.from(event.touches).slice(0, 2).map((touch) => ({
+        x: touch.clientX,
+        y: touch.clientY,
+      }));
+      const midpoint = getRelativeViewportPoint({
+        x: (points[0].x + points[1].x) / 2,
+        y: (points[0].y + points[1].y) / 2,
+      });
+
+      if (!midpoint) return;
+
+      const startDistance = Math.hypot(
+        points[0].x - points[1].x,
+        points[0].y - points[1].y,
+      );
+
+      if (startDistance <= 0) return;
+
+      const startScale = zoom / 100;
+      pinchSessionRef.current = {
+        startDistance,
+        startZoom: zoom,
+        anchorPoint: {
+          x: (midpoint.x - mobilePan.x) / Math.max(0.001, startScale),
+          y: (midpoint.y - mobilePan.y) / Math.max(0.001, startScale),
+        },
+      };
+
+      hasManualMobileTransformRef.current = true;
+      event.preventDefault();
+    },
+    [getRelativeViewportPoint, isMobileViewport, mobilePan.x, mobilePan.y, zoom],
+  );
+
+  const handleMobileViewportTouchMoveCapture = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!isMobileViewport || event.touches.length < 2) return;
+
+      const pinchSession = pinchSessionRef.current;
+      if (!pinchSession) return;
+
+      const points = Array.from(event.touches).slice(0, 2).map((touch) => ({
+        x: touch.clientX,
+        y: touch.clientY,
+      }));
+      const midpoint = getRelativeViewportPoint({
+        x: (points[0].x + points[1].x) / 2,
+        y: (points[0].y + points[1].y) / 2,
+      });
+
+      if (!midpoint) return;
+
+      const distance = Math.hypot(
+        points[0].x - points[1].x,
+        points[0].y - points[1].y,
+      );
+
+      if (distance <= 0) return;
+
+      const nextZoom = clampZoomPercent(
+        pinchSession.startZoom * (distance / pinchSession.startDistance),
+        true,
+      );
+      const nextScale = nextZoom / 100;
+      const nextPan = {
+        x: midpoint.x - pinchSession.anchorPoint.x * nextScale,
+        y: midpoint.y - pinchSession.anchorPoint.y * nextScale,
+      };
+
+      syncMobileZoomTransform(nextZoom, nextPan, { manual: true });
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [getRelativeViewportPoint, isMobileViewport, syncMobileZoomTransform],
+  );
+
+  const handleMobileViewportTouchEndCapture = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      if (!isMobileViewport) return;
+
+      if (event.touches.length < 2) {
+        pinchSessionRef.current = null;
+      }
+    },
+    [isMobileViewport],
+  );
+
+  const renderCanvasSurface = (surfaceTransform?: React.CSSProperties["transform"]) => (
+    <div
+      ref={stageWrapperRef}
+      className="relative shrink-0 rounded-[2px]"
+      style={{
+        width: canvasSize.width * scale,
+        height: canvasSize.height * scale,
+        aspectRatio: stageAspectRatio,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+        overflow: "hidden",
+        background: wrapperBackground,
+        touchAction: "none",
+        willChange: "transform, width, height",
+        backfaceVisibility: "hidden",
+        transform: surfaceTransform,
+      }}
+    >
+      {gridEnabled && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, rgba(15, 23, 42, 0.12) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(15, 23, 42, 0.12) 1px, transparent 1px)
+            `,
+            backgroundSize: `${GRID_SIZE * scale}px ${GRID_SIZE * scale}px`,
+            zIndex: 1,
+          }}
+        />
+      )}
+
+      {showTransparentPreview && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(45deg, #d9d9d9 25%, transparent 25%),
+              linear-gradient(-45deg, #d9d9d9 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #d9d9d9 75%),
+              linear-gradient(-45deg, transparent 75%, #d9d9d9 75%)
+            `,
+            backgroundSize: "20px 20px",
+            backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+          }}
+        />
+      )}
+
+      {bleedEnabled && (
+        <div
+          className="absolute pointer-events-none border border-dashed"
+          style={{
+            top: 18 * scale,
+            left: 18 * scale,
+            right: 18 * scale,
+            bottom: 18 * scale,
+            borderColor: "rgba(255,0,0,0.28)",
+          }}
+        />
+      )}
+
+      <div
+        ref={konvaContainerRef}
+        className="absolute inset-0"
+        style={{
+          width: canvasSize.width * scale,
+          height: canvasSize.height * scale,
+          overflow: "hidden",
+          touchAction: "none",
+          userSelect: "none",
+          willChange: "transform, width, height",
+          backfaceVisibility: "hidden",
+          transform: "translateZ(0)",
+        }}
+      />
+
+      <canvas
+        ref={drawingCanvasRef}
+        className="absolute inset-0"
+        style={{
+          width: canvasSize.width * scale,
+          height: canvasSize.height * scale,
+          zIndex: 14,
+          pointerEvents: isDrawMode ? "auto" : "none",
+          touchAction: "none",
+          cursor: drawSettings.tool === "eraser" ? "cell" : "crosshair",
+        }}
+        onMouseDown={handleDrawMouseDown}
+        onMouseMove={handleDrawMouseMove}
+        onMouseUp={handleDrawMouseUp}
+        onMouseLeave={handleDrawMouseUp}
+        onTouchStart={handleDrawTouchStart}
+        onTouchMove={handleDrawTouchMove}
+        onTouchEnd={handleDrawTouchEnd}
+        onTouchCancel={handleDrawTouchEnd}
+      />
+
+      <LayerEffectOverlay
+        elements={elements}
+        scale={scale}
+        editingLayerId={inlineEditor?.id}
+        pulseProgress={pulseProgress}
+        isMobile={isMobileViewport}
+      />
+
+      {inlineEditor && (
+        <textarea
+          ref={textInputRef}
+          value={editingText}
+          onChange={handleEditingChange}
+          onBlur={handleEditingBlur}
+          onKeyDown={handleEditingKeyDown}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          spellCheck={false}
+          className="absolute resize-none overflow-hidden focus:outline-none"
+          style={{
+            left: inlineEditor.x,
+            top: inlineEditor.y,
+            width: inlineEditor.width,
+            minHeight: inlineEditor.height,
+            fontSize: `${inlineEditor.fontSize * scale}px`,
+            fontFamily: inlineEditor.fontFamily,
+            fontWeight: inlineEditor.fontWeight,
+            fontStyle: inlineEditor.fontStyle,
+            color: inlineEditor.color,
+            lineHeight: String(inlineEditor.lineHeight),
+            letterSpacing: `${inlineEditor.letterSpacing * scale}px`,
+            textAlign: inlineEditor.textAlign,
+            textTransform: inlineEditor.textTransform,
+            background: "rgba(255, 255, 255, 0.98)",
+            border: "1px solid #bfdbfe",
+            borderRadius: 2,
+            padding: `${Math.max(2, Math.round(scale * 2))}px ${Math.max(3, Math.round(scale * 6))}px`,
+            margin: 0,
+            outline: "none",
+            boxShadow: "0 0 0 1px rgba(59, 130, 246, 0.08)",
+            overflow: "hidden",
+            zIndex: 24,
+            userSelect: "text",
+            WebkitUserSelect: "text",
+            caretColor: inlineEditor.color || "#000000",
+            transform: `rotate(${inlineEditor.rotation}deg)`,
+            transformOrigin: "top left",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            pointerEvents: "auto",
+          }}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -921,143 +2458,38 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         backgroundSize: "18px 18px",
       }}
     >
-      <div
-        className="absolute inset-0 overflow-y-auto overflow-x-auto"
-        style={{
-          WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "contain",
-        }}
-      >
+      {isMobileViewport ? (
         <div
-          className="min-w-full min-h-full flex items-start justify-center"
+          className="absolute inset-0 overflow-hidden"
+          style={{ overscrollBehavior: "contain" }}
+          onTouchStartCapture={handleMobileViewportTouchStartCapture}
+          onTouchMoveCapture={handleMobileViewportTouchMoveCapture}
+          onTouchEndCapture={handleMobileViewportTouchEndCapture}
+          onTouchCancelCapture={handleMobileViewportTouchEndCapture}
+        >
+          {renderCanvasSurface(`translate3d(${mobilePan.x}px, ${mobilePan.y}px, 0)`)}
+        </div>
+      ) : (
+        <div
+          className="absolute inset-0 overflow-y-auto overflow-x-auto"
           style={{
-            paddingLeft: isMobileViewport ? 8 : 40,
-            paddingRight: isMobileViewport ? 8 : 40,
-            paddingTop: isMobileViewport ? 8 : 56,
-            paddingBottom: isMobileViewport ? bottomInset : 40,
+            WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
           }}
         >
           <div
-            ref={stageWrapperRef}
-            className="relative shrink-0 rounded-[2px]"
+            className="min-w-full min-h-full flex items-start justify-center"
             style={{
-              width: canvasSize.width * scale,
-              height: canvasSize.height * scale,
-              aspectRatio: stageAspectRatio,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              overflow: "hidden",
-              background: wrapperBackground,
-              touchAction: "none",
-              willChange: "transform, filter",
-              transform: "translateZ(0)",
+              paddingLeft: 40,
+              paddingRight: 40,
+              paddingTop: 56,
+              paddingBottom: 40,
             }}
           >
-            {gridEnabled && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `
-                    linear-gradient(to right, rgba(15, 23, 42, 0.12) 1px, transparent 1px),
-                    linear-gradient(to bottom, rgba(15, 23, 42, 0.12) 1px, transparent 1px)
-                  `,
-                  backgroundSize: `${GRID_SIZE * scale}px ${GRID_SIZE * scale}px`,
-                  zIndex: 1,
-                }}
-              />
-            )}
-
-            {showTransparentPreview && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `
-                    linear-gradient(45deg, #d9d9d9 25%, transparent 25%),
-                    linear-gradient(-45deg, #d9d9d9 25%, transparent 25%),
-                    linear-gradient(45deg, transparent 75%, #d9d9d9 75%),
-                    linear-gradient(-45deg, transparent 75%, #d9d9d9 75%)
-                  `,
-                  backgroundSize: "20px 20px",
-                  backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-                }}
-              />
-            )}
-
-            {bleedEnabled && (
-              <div
-                className="absolute pointer-events-none border border-dashed"
-                style={{
-                  top: 18 * scale,
-                  left: 18 * scale,
-                  right: 18 * scale,
-                  bottom: 18 * scale,
-                  borderColor: "rgba(255,0,0,0.28)",
-                }}
-              />
-            )}
-
-            <div
-              ref={konvaContainerRef}
-              className="absolute inset-0"
-              style={{
-                width: canvasSize.width * scale,
-                height: canvasSize.height * scale,
-                overflow: "hidden",
-                touchAction: "none",
-                willChange: "transform, filter",
-                transform: "translateZ(0)",
-              }}
-            />
-
-            <LayerEffectOverlay
-              elements={elements}
-              scale={scale}
-              editingLayerId={inlineEditor?.id}
-              pulseProgress={pulseProgress}
-              isMobile={isMobileViewport}
-            />
-
-            {inlineEditor && (
-              <textarea
-                ref={textInputRef}
-                value={editingText}
-                onChange={handleEditingChange}
-                onBlur={handleEditingBlur}
-                onKeyDown={handleEditingKeyDown}
-                onPointerDown={(e) => e.stopPropagation()}
-                spellCheck={false}
-                className="absolute resize-none overflow-hidden focus:outline-none"
-                style={{
-                  left: inlineEditor.x,
-                  top: inlineEditor.y,
-                  width: inlineEditor.width,
-                  minHeight: inlineEditor.height,
-                  fontSize: `${inlineEditor.fontSize * scale}px`,
-                  fontFamily: inlineEditor.fontFamily,
-                  fontWeight: inlineEditor.fontWeight,
-                  fontStyle: inlineEditor.fontStyle,
-                  color: inlineEditor.color,
-                  lineHeight: String(inlineEditor.lineHeight),
-                  textAlign: inlineEditor.textAlign,
-                  textTransform: inlineEditor.textTransform,
-                  background: "transparent",
-                  border: "none",
-                  borderRadius: 0,
-                  padding: 0,
-                  margin: 0,
-                  outline: "none",
-                  boxShadow: "none",
-                  overflow: "hidden",
-                  zIndex: 20,
-                  transform: `rotate(${inlineEditor.rotation}deg)`,
-                  transformOrigin: "top left",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                }}
-              />
-            )}
+            {renderCanvasSurface("translateZ(0)")}
           </div>
         </div>
-      </div>
+      )}
 
       {!isMobileViewport && (
         <div className="absolute bottom-4 right-4 flex flex-col overflow-hidden rounded-xl border border-[#d9dde3] bg-white shadow-sm">
@@ -1065,13 +2497,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             {zoom}%
           </div>
           <button
-            onClick={() => onZoomChange(Math.min(200, zoom + 10))}
+            onClick={() => onZoomChange(clampZoomPercent(zoom + 10, false))}
             className="flex h-9 w-10 items-center justify-center text-[#667085] hover:bg-[#f5f7fa]"
           >
             <ZoomIn size={16} strokeWidth={1.6} />
           </button>
           <button
-            onClick={() => onZoomChange(Math.max(10, zoom - 10))}
+            onClick={() => onZoomChange(clampZoomPercent(zoom - 10, false))}
             className="flex h-9 w-10 items-center justify-center text-[#667085] hover:bg-[#f5f7fa]"
           >
             <ZoomOut size={16} strokeWidth={1.6} />
@@ -1081,6 +2513,37 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     </div>
   );
 };
+
+function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps) {
+  return (
+    prev.elements === next.elements &&
+    prev.selectedElementIds.length === next.selectedElementIds.length &&
+    prev.selectedElementIds.every((id, index) => id === next.selectedElementIds[index]) &&
+    prev.onSelectElement === next.onSelectElement &&
+    prev.onUpdateElement === next.onUpdateElement &&
+    prev.onPreviewElement === next.onPreviewElement &&
+    prev.onClearPreviewElement === next.onClearPreviewElement &&
+    prev.autoEditElementId === next.autoEditElementId &&
+    prev.onAutoEditHandled === next.onAutoEditHandled &&
+    prev.zoom === next.zoom &&
+    prev.onZoomChange === next.onZoomChange &&
+    prev.canvasSize.width === next.canvasSize.width &&
+    prev.canvasSize.height === next.canvasSize.height &&
+    prev.canvasSize.label === next.canvasSize.label &&
+    prev.canvasBackground === next.canvasBackground &&
+    prev.gridEnabled === next.gridEnabled &&
+    prev.alignmentGuides === next.alignmentGuides &&
+    prev.bleedEnabled === next.bleedEnabled &&
+    prev.isMobileViewport === next.isMobileViewport &&
+    prev.bottomInset === next.bottomInset &&
+    prev.activeTool === next.activeTool &&
+    prev.drawSettings === next.drawSettings &&
+    prev.finishDrawingRequest === next.finishDrawingRequest &&
+    prev.onDrawingCommitted === next.onDrawingCommitted
+  );
+}
+
+export const CanvasStage = React.memo(CanvasStageComponent, areCanvasStagePropsEqual);
 
 function createKonvaShape(element: CanvasElement): Konva.Node | null {
   try {
@@ -1105,10 +2568,18 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
     };
 
     if (renderable.type === "text") {
+      const measured = measureTextBox(
+        renderable,
+        renderable.width,
+        renderable.fontSize || 24,
+      );
+
       return new Konva.Text({
         ...baseConfig,
+        listening: true,
+        name: "selectable-text",
         width: renderable.width,
-        height: renderable.height,
+        height: measured.height,
         text: textContent,
         fontSize: renderable.fontSize || 24,
         fontFamily: renderable.fontFamily || "sans-serif",
@@ -1123,6 +2594,12 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
             ? renderable.textDecoration
             : undefined,
         wrap: "word",
+        hitFunc: (context, shape) => {
+          context.beginPath();
+          context.rect(0, 0, renderable.width, measured.height);
+          context.closePath();
+          context.fillStrokeShape(shape);
+        },
       });
     }
 
@@ -1178,15 +2655,29 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
     }
 
     if (renderable.type === "image" && renderable.src) {
-      const img = new window.Image();
-      img.src = renderable.src;
-
-      return new Konva.Image({
+      const img = getImageAsset(renderable.src);
+      const imageNode = new Konva.Image({
         ...baseConfig,
         width: renderable.width,
         height: renderable.height,
         image: img,
       });
+
+      const applyCrop = () => {
+        const crop = getCoverCrop(img, renderable.width, renderable.height);
+        if (crop) {
+          imageNode.crop(crop);
+        }
+        imageNode.getLayer()?.batchDraw();
+      };
+
+      if ((img.naturalWidth || img.width) && (img.naturalHeight || img.height)) {
+        applyCrop();
+      } else {
+        img.addEventListener("load", applyCrop, { once: true });
+      }
+
+      return imageNode;
     }
 
     if (renderable.type === "table") {
@@ -1245,50 +2736,46 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       return group;
     }
 
-    if (renderable.type === "video") {
-      const group = new Konva.Group({
+    if (renderable.type === "video" && renderable.src) {
+      const video = getVideoAsset(renderable.src);
+      const videoNode = new Konva.Image({
         ...baseConfig,
         width: renderable.width,
         height: renderable.height,
+        image: video,
       });
 
-      group.add(
-        new Konva.Rect({
-          x: 0,
-          y: 0,
-          width: renderable.width,
-          height: renderable.height,
-          fill: "#1a1a1a",
-        }),
-      );
+      const applyCrop = () => {
+        const crop = getVideoCoverCrop(video, renderable.width, renderable.height);
+        if (crop) {
+          videoNode.crop(crop);
+        }
+        videoNode.getLayer()?.batchDraw();
+      };
 
-      group.add(
-        new Konva.Text({
-          x: 0,
-          y: renderable.height / 2 - 20,
-          width: renderable.width,
-          text: "VIDEO",
-          fontSize: 24,
-          fontFamily: "Arial",
-          fill: "#ffffff",
-          align: "center",
-        }),
-      );
+      const drawFrame = () => {
+        videoNode.getLayer()?.batchDraw();
+        if (!video.paused && !video.ended) {
+          requestAnimationFrame(drawFrame);
+        }
+      };
 
-      group.add(
-        new Konva.Text({
-          x: 0,
-          y: renderable.height / 2 + 10,
-          width: renderable.width,
-          text: `${renderable.duration || 0}s`,
-          fontSize: 14,
-          fontFamily: "Arial",
-          fill: "#999999",
-          align: "center",
-        }),
-      );
+      const startPlayback = () => {
+        applyCrop();
+        video.play().then(() => {
+          requestAnimationFrame(drawFrame);
+        }).catch(() => {
+          videoNode.getLayer()?.batchDraw();
+        });
+      };
 
-      return group;
+      if (video.readyState >= 1) {
+        startPlayback();
+      } else {
+        video.addEventListener("loadedmetadata", startPlayback, { once: true });
+      }
+
+      return videoNode;
     }
 
     return null;
@@ -1574,10 +3061,6 @@ function getGradientPoints(
   };
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function mapFontStyleToKonva(
   fontWeight?: string,
   fontStyle?: "normal" | "italic",
@@ -1601,4 +3084,34 @@ function mapFontStyleToKonva(
   }
 
   return isItalic ? "italic" : "normal";
+}
+
+function getVideoCoverCrop(video: HTMLVideoElement, width: number, height: number) {
+  const sourceWidth = video.videoWidth || 0;
+  const sourceHeight = video.videoHeight || 0;
+
+  if (!sourceWidth || !sourceHeight || width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = width / height;
+
+  if (sourceRatio > targetRatio) {
+    const cropWidth = sourceHeight * targetRatio;
+    return {
+      x: (sourceWidth - cropWidth) / 2,
+      y: 0,
+      width: cropWidth,
+      height: sourceHeight,
+    };
+  }
+
+  const cropHeight = sourceWidth / targetRatio;
+  return {
+    x: 0,
+    y: (sourceHeight - cropHeight) / 2,
+    width: sourceWidth,
+    height: cropHeight,
+  };
 }
