@@ -91,9 +91,37 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+button,
+[role="button"],
+input[type="range"],
+input[type="color"] {
+  touch-action: manipulation;
+}
+
+@media (max-width: 767px) {
+  button,
+  [role="button"],
+  input[type="range"],
+  input[type="color"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  input[type="range"] {
+    width: 100%;
   }
 }
 

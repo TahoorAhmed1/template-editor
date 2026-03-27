@@ -69,6 +69,8 @@ interface MobileBottomDockProps {
   onBleedToggle: (on: boolean) => void;
   onFoldsChange: (folds: string) => void;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
+  requestedTab?: DockTab;
+  onRequestedTabHandled?: () => void;
 }
 
 interface ToolItem {
@@ -202,6 +204,8 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   onBleedToggle,
   onFoldsChange,
   onCanvasSizeChange,
+  requestedTab,
+  onRequestedTabHandled,
 }) => {
   const [openTab, setOpenTab] = React.useState<DockTab>(null);
   const [addToolView, setAddToolView] = React.useState<"list" | "tool">("list");
@@ -233,6 +237,12 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
       setAddToolView("list");
     }
   }, [openTab]);
+
+  React.useEffect(() => {
+    if (!requestedTab) return;
+    setOpenTab(requestedTab);
+    onRequestedTabHandled?.();
+  }, [requestedTab, onRequestedTabHandled]);
 
   const handleDockTabClick = (tab: DockTab) => {
     setOpenTab((prev) => (prev === tab ? null : tab));

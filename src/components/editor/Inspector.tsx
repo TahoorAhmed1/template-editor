@@ -54,7 +54,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   if (isMobile) return null;
 
   return (
-    <div className="w-[280px] lg:w-[300px] bg-editor-inspector border-l border-editor-inspector-border flex flex-col shrink-0 overflow-hidden">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-editor-inspector">
       <div className="px-4 py-3 border-b border-editor-inspector-border">
         <h2 className="text-sm font-semibold text-foreground">
           {selectedElement
@@ -297,7 +297,56 @@ const FONT_OPTIONS = [
   { label: "Lucida Console", value: "'Lucida Console', monospace" },
 ];
 
-export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer }) => (
+export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer }) => {
+  const activePhase = element.animationProps?.activePhase ?? "end";
+  const activeAnimation = element.animationProps?.[activePhase] ?? {
+    opacity: 1,
+    x: 0,
+    y: 0,
+    scale: 1,
+    rotation: 0,
+  };
+
+  const updateAnimationPhase = (phase: "start" | "end") => {
+    onUpdate({
+      animationProps: {
+        activePhase: phase,
+        start: element.animationProps?.start ?? { opacity: 0, x: 0, y: 20, scale: 1, rotation: 0 },
+        end: element.animationProps?.end ?? { opacity: 1, x: 0, y: 0, scale: 1, rotation: 0 },
+      },
+    });
+  };
+
+  const updateAnimationValue = (
+    key: "opacity" | "x" | "y" | "scale" | "rotation",
+    value: number,
+  ) => {
+    onUpdate({
+      animationProps: {
+        activePhase,
+        start: {
+          opacity: 0,
+          x: 0,
+          y: 20,
+          scale: 1,
+          rotation: 0,
+          ...(element.animationProps?.start ?? {}),
+          ...(activePhase === "start" ? { [key]: value } : {}),
+        },
+        end: {
+          opacity: 1,
+          x: 0,
+          y: 0,
+          scale: 1,
+          rotation: 0,
+          ...(element.animationProps?.end ?? {}),
+          ...(activePhase === "end" ? { [key]: value } : {}),
+        },
+      },
+    });
+  };
+
+  return (
   <div className="p-4 space-y-5">
     {/* Actions bar */}
     <div className="flex items-center gap-0.5 flex-wrap">
@@ -703,106 +752,91 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
         </div>
       </Section>
 
-      {/* <Section title="Animation">
-        <div className="space-y-2.5">
-          <Row label="Type">
-            <select
-              value={element.animation?.type || "none"}
-              onChange={(e) => {
-                const type = e.target.value;
-                if (type === "none") {
-                  onUpdate({ animation: undefined });
-                } else {
-                  onUpdate({
-                    animation: {
-                      type: type as any,
-                      duration: element.animation?.duration || 1,
-                      delay: element.animation?.delay || 0,
-                      direction: element.animation?.direction || "in"
-                    }
-                  });
-                }
-              }}
-              className="h-7 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-            >
-              <option value="none">None</option>
-              <option value="bounce">Bounce</option>
-              <option value="slide">Slide</option>
-              <option value="fade">Fade</option>
-              <option value="scale">Scale</option>
-              <option value="rotate">Rotate</option>
-            </select>
+      <Section title="Animation">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {(["start", "end"] as const).map((phase) => (
+              <button
+                key={phase}
+                onClick={() => updateAnimationPhase(phase)}
+                className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize transition ${
+                  activePhase === phase
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-editor-inspector-border bg-accent/30 text-muted-foreground"
+                }`}
+              >
+                {phase}
+              </button>
+            ))}
+          </div>
+
+          <Row label="Fade">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={activeAnimation.opacity}
+                onChange={(e) => updateAnimationValue("opacity", Number(e.target.value))}
+                className="w-16 h-1 accent-primary"
+              />
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value={activeAnimation.opacity}
+                onChange={(e) => updateAnimationValue("opacity", Number(e.target.value))}
+                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
           </Row>
-          {element.animation && (
-            <>
-              <Row label="Direction">
-                <select
-                  value={element.animation.direction}
-                  onChange={(e) => onUpdate({
-                    animation: { ...element.animation!, direction: e.target.value as "in" | "out" }
-                  })}
-                  className="h-7 px-2 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-                >
-                  <option value="in">In</option>
-                  <option value="out">Out</option>
-                </select>
-              </Row>
-              <Row label="Duration">
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="5"
-                    step="0.1"
-                    value={element.animation.duration}
-                    onChange={(e) => onUpdate({
-                      animation: { ...element.animation!, duration: Number(e.target.value) }
-                    })}
-                    className="w-16 h-1 accent-primary"
-                  />
-                  <input
-                    type="number"
-                    min="0.1"
-                    max="5"
-                    step="0.1"
-                    value={element.animation.duration}
-                    onChange={(e) => onUpdate({
-                      animation: { ...element.animation!, duration: Number(e.target.value) }
-                    })}
-                    className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  />
-                </div>
-              </Row>
-              <Row label="Delay">
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="range"
-                    min="0"
-                    max="5"
-                    step="0.1"
-                    value={element.animation.delay}
-                    onChange={(e) => onUpdate({
-                      animation: { ...element.animation!, delay: Number(e.target.value) }
-                    })}
-                    className="w-16 h-1 accent-primary"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    max="5"
-                    step="0.1"
-                    value={element.animation.delay}
-                    onChange={(e) => onUpdate({
-                      animation: { ...element.animation!, delay: Number(e.target.value) }
-                    })}
-                    className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  />
-                </div>
-              </Row>
-            </>
-          )}
+
+          <Row label="Offset Y">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min="-200"
+                max="200"
+                step="1"
+                value={activeAnimation.y}
+                onChange={(e) => updateAnimationValue("y", Number(e.target.value))}
+                className="w-16 h-1 accent-primary"
+              />
+              <input
+                type="number"
+                value={activeAnimation.y}
+                onChange={(e) => updateAnimationValue("y", Number(e.target.value))}
+                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </Row>
+
+          <Row label="Scale">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range"
+                min="0.25"
+                max="2"
+                step="0.05"
+                value={activeAnimation.scale}
+                onChange={(e) => updateAnimationValue("scale", Number(e.target.value))}
+                className="w-16 h-1 accent-primary"
+              />
+              <input
+                type="number"
+                min="0.25"
+                max="2"
+                step="0.05"
+                value={activeAnimation.scale}
+                onChange={(e) => updateAnimationValue("scale", Number(e.target.value))}
+                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+            </div>
+          </Row>
         </div>
-      </Section> */}
+      </Section>
 
     {/* Position - all types */}
     <Section title="Position">
@@ -867,10 +901,33 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
             />
           </div>
         </Row>
+        <Row label="Scale">
+          <div className="flex items-center gap-1.5">
+            <input
+              type="range"
+              min="0.25"
+              max="3"
+              step="0.05"
+              value={element.scale ?? 1}
+              onChange={(e) => onUpdate({ scale: Number(e.target.value) })}
+              className="w-16 h-1 accent-primary"
+            />
+            <input
+              type="number"
+              min="0.25"
+              max="3"
+              step="0.05"
+              value={element.scale ?? 1}
+              onChange={(e) => onUpdate({ scale: Number(e.target.value) })}
+              className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+          </div>
+        </Row>
       </div>
     </Section>
   </div>
-);
+  );
+};
 
 // ── Shared UI Components ──
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -894,7 +951,7 @@ const ActionButton: React.FC<{ onClick: () => void; title: string; icon: React.R
 }) => (
   <button
     onClick={onClick}
-    className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+    className="rounded p-2.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:p-1.5"
     title={title}
   >
     {icon}
@@ -910,11 +967,11 @@ const ToggleRow: React.FC<{ label: string; on: boolean; onToggle: (on: boolean) 
     <span className="text-[12px] text-muted-foreground">{label}</span>
     <button
       onClick={() => onToggle(!on)}
-      className={`w-10 h-5 rounded-full transition-colors duration-200 relative ${on ? "bg-primary" : "bg-muted"}`}
+      className={`relative flex h-11 w-12 items-center rounded-full p-1 transition-colors duration-200 md:h-6 md:w-11 ${on ? "bg-primary" : "bg-muted"}`}
     >
       <div
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-primary-foreground shadow transition-transform duration-200 ${
-          on ? "translate-x-5" : "translate-x-0.5"
+        className={`h-4 w-4 rounded-full bg-primary-foreground shadow transition-transform duration-200 ${
+          on ? "translate-x-5" : "translate-x-0"
         }`}
       />
     </button>

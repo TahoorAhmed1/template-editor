@@ -9,6 +9,12 @@ import { ZoomIn, ZoomOut } from "lucide-react";
 import Konva from "konva";
 import type { CanvasElement } from "./EditorShell";
 
+const konvaWithTextFix = Konva as typeof Konva & {
+  _fixTextRendering?: boolean;
+};
+
+konvaWithTextFix._fixTextRendering = true;
+
 interface CanvasStageProps {
   elements: CanvasElement[];
   selectedElementIds: string[];
@@ -22,6 +28,7 @@ interface CanvasStageProps {
   alignmentGuides?: boolean;
   bleedEnabled?: boolean;
   isMobileViewport?: boolean;
+  bottomInset?: number;
 }
 
 type InlineEditorState = {
@@ -48,9 +55,138 @@ const GRID_SIZE = 50;
 const GRID_MINOR_COLOR = "rgba(15, 23, 42, 0.14)";
 const GRID_MAJOR_COLOR = "rgba(15, 23, 42, 0.24)";
 const GRID_MAJOR_EVERY = 5;
+const GUIDE_COLOR = "rgba(37, 99, 235, 0.9)";
+const GUIDE_SNAP_THRESHOLD = 6;
+
+type GuideBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function snap(value: number, size: number) {
   return Math.round(value / size) * size;
+}
+
+function getElementGuideBounds(element: CanvasElement): GuideBounds {
+  return {
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+  };
+}
+
+function getNodeGuideBounds(
+  node: Konva.Node,
+  fallbackWidth: number,
+  fallbackHeight: number,
+): GuideBounds {
+  const position = node.position();
+  const scaleX = Math.abs(node.scaleX?.() ?? 1);
+  const scaleY = Math.abs(node.scaleY?.() ?? 1);
+  const width =
+    node instanceof Konva.Group ? node.width() : (node.width?.() ?? fallbackWidth) * scaleX;
+  const height =
+    node instanceof Konva.Group ? node.height() : (node.height?.() ?? fallbackHeight) * scaleY;
+
+  return {
+    x: position.x,
+    y: position.y,
+    width: Math.max(1, width || fallbackWidth),
+    height: Math.max(1, height || fallbackHeight),
+  };
+}
+
+function resolveAlignmentGuides(
+  activeId: string,
+  bounds: GuideBounds,
+  elements: CanvasElement[],
+  canvasSize: { width: number; height: number },
+) {
+  const verticalStops = [0, canvasSize.width / 2, canvasSize.width];
+  const horizontalStops = [0, canvasSize.height / 2, canvasSize.height];
+
+  elements.forEach((element) => {
+    if (element.id === activeId) return;
+
+    const box = getElementGuideBounds(element);
+    verticalStops.push(box.x, box.x + box.width / 2, box.x + box.width);
+    horizontalStops.push(box.y, box.y + box.height / 2, box.y + box.height);
+  });
+
+  const verticalEdges = [
+    { position: bounds.x, offset: 0 },
+    { position: bounds.x + bounds.width / 2, offset: bounds.width / 2 },
+    { position: bounds.x + bounds.width, offset: bounds.width },
+  ];
+  const horizontalEdges = [
+    { position: bounds.y, offset: 0 },
+    { position: bounds.y + bounds.height / 2, offset: bounds.height / 2 },
+    { position: bounds.y + bounds.height, offset: bounds.height },
+  ];
+
+  let bestVertical: { stop: number; offset: number; diff: number } | null = null;
+  let bestHorizontal: { stop: number; offset: number; diff: number } | null = null;
+
+  verticalStops.forEach((stop) => {
+    verticalEdges.forEach((edge) => {
+      const diff = stop - edge.position;
+      if (Math.abs(diff) > GUIDE_SNAP_THRESHOLD) return;
+
+      if (!bestVertical || Math.abs(diff) < Math.abs(bestVertical.diff)) {
+        bestVertical = { stop, offset: edge.offset, diff };
+      }
+    });
+  });
+
+  horizontalStops.forEach((stop) => {
+    horizontalEdges.forEach((edge) => {
+      const diff = stop - edge.position;
+      if (Math.abs(diff) > GUIDE_SNAP_THRESHOLD) return;
+
+      if (!bestHorizontal || Math.abs(diff) < Math.abs(bestHorizontal.diff)) {
+        bestHorizontal = { stop, offset: edge.offset, diff };
+      }
+    });
+  });
+
+  return {
+    snappedX: bestVertical ? bestVertical.stop - bestVertical.offset : bounds.x,
+    snappedY: bestHorizontal ? bestHorizontal.stop - bestHorizontal.offset : bounds.y,
+    verticalGuide: bestVertical?.stop,
+    horizontalGuide: bestHorizontal?.stop,
+  };
+}
+
+function getActiveAnimationState(element: CanvasElement) {
+  const animationProps = element.animationProps;
+  if (!animationProps) {
+    return { opacity: 1, x: 0, y: 0, scale: 1, rotation: 0 };
+  }
+
+  return animationProps[animationProps.activePhase] ?? {
+    opacity: 1,
+    x: 0,
+    y: 0,
+    scale: 1,
+    rotation: 0,
+  };
+}
+
+function getRenderableLayer(element: CanvasElement) {
+  const motion = getActiveAnimationState(element);
+  const baseScale = element.scale ?? 1;
+
+  return {
+    ...element,
+    x: element.x + motion.x,
+    y: element.y + motion.y,
+    rotation: (element.rotation || 0) + motion.rotation,
+    opacity: (element.opacity ?? 100) * motion.opacity,
+    scale: baseScale * motion.scale,
+  };
 }
 
 export const CanvasStage: React.FC<CanvasStageProps> = ({
@@ -63,8 +199,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   canvasSize,
   canvasBackground,
   gridEnabled = false,
+  alignmentGuides = true,
   bleedEnabled,
   isMobileViewport = false,
+  bottomInset = 96,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
@@ -74,6 +212,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const layerRef = useRef<Konva.Layer | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const gridLayerRef = useRef<Konva.Layer | null>(null);
+  const guideLayerRef = useRef<Konva.Layer | null>(null);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditorRef = useRef<InlineEditorState | null>(null);
@@ -88,12 +227,56 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
   const scale = zoom / 100;
 
+  const clearAlignmentGuides = useCallback(() => {
+    const guideLayer = guideLayerRef.current;
+    if (!guideLayer) return;
+
+    guideLayer.destroyChildren();
+    guideLayer.draw();
+  }, []);
+
+  const drawAlignmentGuides = useCallback(
+    (verticalGuide?: number, horizontalGuide?: number) => {
+      const guideLayer = guideLayerRef.current;
+      if (!guideLayer) return;
+
+      guideLayer.destroyChildren();
+
+      if (typeof verticalGuide === "number") {
+        guideLayer.add(
+          new Konva.Line({
+            points: [verticalGuide, 0, verticalGuide, canvasSize.height],
+            stroke: GUIDE_COLOR,
+            strokeWidth: 1,
+            dash: [6, 6],
+            listening: false,
+          }),
+        );
+      }
+
+      if (typeof horizontalGuide === "number") {
+        guideLayer.add(
+          new Konva.Line({
+            points: [0, horizontalGuide, canvasSize.width, horizontalGuide],
+            stroke: GUIDE_COLOR,
+            strokeWidth: 1,
+            dash: [6, 6],
+            listening: false,
+          }),
+        );
+      }
+
+      guideLayer.draw();
+    },
+    [canvasSize.height, canvasSize.width],
+  );
+
   const syncStageScale = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    stage.width(canvasSize.width);
-    stage.height(canvasSize.height);
+    stage.width(canvasSize.width * scale);
+    stage.height(canvasSize.height * scale);
     stage.scale({ x: scale, y: scale });
     stage.draw();
   }, [canvasSize.width, canvasSize.height, scale]);
@@ -230,18 +413,22 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   useEffect(() => {
     if (!konvaContainerRef.current) return;
 
+    const currentShapeRefs = shapeRefs.current;
+
     const stage = new Konva.Stage({
       container: konvaContainerRef.current,
-      width: canvasSize.width,
-      height: canvasSize.height,
+      width: canvasSize.width * scale,
+      height: canvasSize.height * scale,
       draggable: false,
     });
 
     const gridLayer = new Konva.Layer({ listening: false });
     const layer = new Konva.Layer();
+    const guideLayer = new Konva.Layer({ listening: false });
 
     stage.add(gridLayer);
     stage.add(layer);
+    stage.add(guideLayer);
 
     const transformer = new Konva.Transformer({
       rotateEnabled: true,
@@ -259,11 +446,13 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     gridLayerRef.current = gridLayer;
     layerRef.current = layer;
     transformerRef.current = transformer;
+    guideLayerRef.current = guideLayer;
 
     stage.on(
       "click tap",
       (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
         if (e.target === stage) {
+          clearAlignmentGuides();
           onSelectElement(null);
         }
       },
@@ -275,9 +464,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       gridLayerRef.current = null;
       layerRef.current = null;
       transformerRef.current = null;
-      shapeRefs.current.clear();
+      guideLayerRef.current = null;
+      currentShapeRefs.clear();
     };
-  }, [canvasSize.width, canvasSize.height, onSelectElement]);
+  }, [canvasSize.width, canvasSize.height, clearAlignmentGuides, onSelectElement, scale]);
 
   useEffect(() => {
     syncStageScale();
@@ -308,11 +498,14 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     oldShapes.forEach((shape) => shape.destroy());
     shapeRefs.current.clear();
 
-    elements.forEach((element) => {
+    elements
+      .filter((element) => element.visible !== false)
+      .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+      .forEach((element) => {
       const shape = createKonvaShape(element);
       if (!shape) return;
 
-      layer.add(shape);
+      layer.add(shape as Konva.Shape | Konva.Group);
       shapeRefs.current.set(element.id, shape);
 
       shape.on(
@@ -342,21 +535,43 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       }
 
       shape.on("dragmove", () => {
-        if (!gridEnabled) return;
+        const bounds = getNodeGuideBounds(shape, element.width, element.height);
+        let nextX = bounds.x;
+        let nextY = bounds.y;
 
-        const pos = shape.position();
-        shape.position({
-          x: snap(pos.x, GRID_SIZE),
-          y: snap(pos.y, GRID_SIZE),
-        });
+        if (gridEnabled) {
+          nextX = snap(nextX, GRID_SIZE);
+          nextY = snap(nextY, GRID_SIZE);
+        }
+
+        if (alignmentGuides) {
+          const guideResult = resolveAlignmentGuides(
+            element.id,
+            { ...bounds, x: nextX, y: nextY },
+            elements,
+            canvasSize,
+          );
+          nextX = guideResult.snappedX;
+          nextY = guideResult.snappedY;
+          drawAlignmentGuides(
+            guideResult.verticalGuide,
+            guideResult.horizontalGuide,
+          );
+        } else {
+          clearAlignmentGuides();
+        }
+
+        shape.position({ x: nextX, y: nextY });
 
         layer.draw();
       });
 
       shape.on("dragend", () => {
+        clearAlignmentGuides();
         const pos = shape.position();
-        const nextX = gridEnabled ? snap(pos.x, GRID_SIZE) : pos.x;
-        const nextY = gridEnabled ? snap(pos.y, GRID_SIZE) : pos.y;
+        const motion = getActiveAnimationState(element);
+        const nextX = (gridEnabled ? snap(pos.x, GRID_SIZE) : pos.x) - motion.x;
+        const nextY = (gridEnabled ? snap(pos.y, GRID_SIZE) : pos.y) - motion.y;
 
         shape.position({ x: nextX, y: nextY });
 
@@ -371,10 +586,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
       });
 
       shape.on("transformend", () => {
+        clearAlignmentGuides();
         const pos = shape.position();
+        const motion = getActiveAnimationState(element);
 
-        let nextX = pos.x;
-        let nextY = pos.y;
+        let nextX = pos.x - motion.x;
+        let nextY = pos.y - motion.y;
         let nextWidth: number;
         let nextHeight: number;
 
@@ -430,6 +647,9 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
     layer.draw();
   }, [
+    canvasSize,
+    clearAlignmentGuides,
+    drawAlignmentGuides,
     elements,
     selectedElementIds,
     inlineEditor?.id,
@@ -437,8 +657,15 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     onUpdateElement,
     startInlineEditing,
     getInlineEditorState,
+    alignmentGuides,
     gridEnabled,
   ]);
+
+  useEffect(() => {
+    if (!alignmentGuides) {
+      clearAlignmentGuides();
+    }
+  }, [alignmentGuides, clearAlignmentGuides]);
 
   useEffect(() => {
     const gridLayer = gridLayerRef.current;
@@ -593,7 +820,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
     const paddingX = isMobileViewport ? 24 : 140;
-    const paddingY = isMobileViewport ? 24 : 110;
+    const paddingY = isMobileViewport ? bottomInset + 36 : 110;
 
     const usableWidth = Math.max(1, clientWidth - paddingX);
     const usableHeight = Math.max(1, clientHeight - paddingY);
@@ -608,7 +835,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     );
 
     onZoomChange(nextZoom);
-  }, [canvasSize.width, canvasSize.height, isMobileViewport, onZoomChange]);
+  }, [bottomInset, canvasSize.width, canvasSize.height, isMobileViewport, onZoomChange]);
 
   useLayoutEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -648,6 +875,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const showTransparentPreview = canvasBackground === "transparent";
   const wrapperBackground =
     !showTransparentPreview && canvasBackground ? canvasBackground : "#ffffff";
+  const stageAspectRatio =
+    canvasSize.label === "Instagram Story"
+      ? "9 / 16"
+      : `${canvasSize.width} / ${canvasSize.height}`;
 
   return (
     <div
@@ -672,7 +903,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             paddingLeft: isMobileViewport ? 8 : 40,
             paddingRight: isMobileViewport ? 8 : 40,
             paddingTop: isMobileViewport ? 8 : 56,
-            paddingBottom: isMobileViewport ? 72 : 40,
+            paddingBottom: isMobileViewport ? bottomInset : 40,
           }}
         >
           <div
@@ -681,11 +912,27 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
             style={{
               width: canvasSize.width * scale,
               height: canvasSize.height * scale,
+              aspectRatio: stageAspectRatio,
               boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
               overflow: "hidden",
               background: wrapperBackground,
+              touchAction: "none",
             }}
           >
+            {gridEnabled && (
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: `
+                    linear-gradient(to right, rgba(15, 23, 42, 0.12) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(15, 23, 42, 0.12) 1px, transparent 1px)
+                  `,
+                  backgroundSize: `${GRID_SIZE * scale}px ${GRID_SIZE * scale}px`,
+                  zIndex: 1,
+                }}
+              />
+            )}
+
             {showTransparentPreview && (
               <div
                 className="absolute inset-0 pointer-events-none"
@@ -722,6 +969,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                 width: canvasSize.width * scale,
                 height: canvasSize.height * scale,
                 overflow: "hidden",
+                touchAction: "none",
               }}
             />
 
@@ -791,114 +1039,117 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
 function createKonvaShape(element: CanvasElement): Konva.Node | null {
   try {
+    const renderable = getRenderableLayer(element);
     const baseConfig = {
-      id: element.id,
-      x: element.x,
-      y: element.y,
-      rotation: element.rotation || 0,
-      opacity: element.opacity != null ? element.opacity / 100 : 1,
+      id: renderable.id,
+      x: renderable.x,
+      y: renderable.y,
+      rotation: renderable.rotation || 0,
+      opacity: renderable.opacity != null ? renderable.opacity / 100 : 1,
+      scaleX: renderable.scale ?? 1,
+      scaleY: renderable.scale ?? 1,
       draggable: true,
     };
 
-    if (element.type === "text") {
+    if (renderable.type === "text") {
       return new Konva.Text({
         ...baseConfig,
-        width: element.width,
-        height: element.height,
-        text: element.content || "",
-        fontSize: element.fontSize || 24,
-        fontFamily: element.fontFamily || "sans-serif",
-        fontStyle: mapFontWeightToKonvaFontStyle(element.fontWeight),
-        fill: element.color || "#000000",
-        align: element.textAlign || "center",
+        width: renderable.width,
+        height: renderable.height,
+        text: renderable.content || "",
+        fontSize: renderable.fontSize || 24,
+        fontFamily: renderable.fontFamily || "sans-serif",
+        fontStyle: mapFontWeightToKonvaFontStyle(renderable.fontWeight),
+        fill: renderable.color || "#000000",
+        align: renderable.textAlign || "center",
         verticalAlign: "middle",
-        lineHeight: element.lineHeight || 1.2,
-        letterSpacing: element.letterSpacing || 0,
+        lineHeight: renderable.lineHeight || 1.2,
+        letterSpacing: renderable.letterSpacing || 0,
         wrap: "word",
       });
     }
 
-    if (element.type === "shape") {
-      if (element.shapeType === "circle") {
+    if (renderable.type === "shape") {
+      if (renderable.shapeType === "circle") {
         return new Konva.Circle({
           ...baseConfig,
-          x: element.x + element.width / 2,
-          y: element.y + element.height / 2,
-          radius: Math.min(element.width, element.height) / 2,
-          fill: element.backgroundColor || "#4488FF",
-          stroke: element.borderColor || "transparent",
-          strokeWidth: element.borderWidth || 0,
+          x: renderable.x + renderable.width / 2,
+          y: renderable.y + renderable.height / 2,
+          radius: Math.min(renderable.width, renderable.height) / 2,
+          fill: renderable.backgroundColor || "#4488FF",
+          stroke: renderable.borderColor || "transparent",
+          strokeWidth: renderable.borderWidth || 0,
         });
       }
 
-      if (element.shapeType === "triangle") {
+      if (renderable.shapeType === "triangle") {
         return new Konva.Line({
           ...baseConfig,
           points: [
-            element.width / 2,
+            renderable.width / 2,
             0,
-            element.width,
-            element.height,
+            renderable.width,
+            renderable.height,
             0,
-            element.height,
+            renderable.height,
           ],
           closed: true,
-          fill: element.backgroundColor || "#4488FF",
-          stroke: element.borderColor || "transparent",
-          strokeWidth: element.borderWidth || 0,
+          fill: renderable.backgroundColor || "#4488FF",
+          stroke: renderable.borderColor || "transparent",
+          strokeWidth: renderable.borderWidth || 0,
         });
       }
 
-      if (element.shapeType === "line") {
+      if (renderable.shapeType === "line") {
         return new Konva.Line({
           ...baseConfig,
-          points: [0, element.height / 2, element.width, element.height / 2],
-          stroke: element.backgroundColor || "#000000",
-          strokeWidth: element.borderWidth || 2,
+          points: [0, renderable.height / 2, renderable.width, renderable.height / 2],
+          stroke: renderable.backgroundColor || "#000000",
+          strokeWidth: renderable.borderWidth || 2,
         });
       }
 
       return new Konva.Rect({
         ...baseConfig,
-        width: element.width,
-        height: element.height,
-        fill: element.backgroundColor || "#4488FF",
-        stroke: element.borderColor || "transparent",
-        strokeWidth: element.borderWidth || 0,
-        cornerRadius: element.borderRadius || 0,
+        width: renderable.width,
+        height: renderable.height,
+        fill: renderable.backgroundColor || "#4488FF",
+        stroke: renderable.borderColor || "transparent",
+        strokeWidth: renderable.borderWidth || 0,
+        cornerRadius: renderable.borderRadius || 0,
       });
     }
 
-    if (element.type === "image" && element.src) {
+    if (renderable.type === "image" && renderable.src) {
       const img = new window.Image();
-      img.src = element.src;
+      img.src = renderable.src;
 
       return new Konva.Image({
         ...baseConfig,
-        width: element.width,
-        height: element.height,
+        width: renderable.width,
+        height: renderable.height,
         image: img,
       });
     }
 
-    if (element.type === "table") {
+    if (renderable.type === "table") {
       const group = new Konva.Group({
         ...baseConfig,
-        width: element.width,
-        height: element.height,
+        width: renderable.width,
+        height: renderable.height,
       });
 
-      const rows = element.rows || 3;
-      const cols = element.cols || 3;
-      const cellWidth = element.width / cols;
-      const cellHeight = element.height / rows;
+      const rows = renderable.rows || 3;
+      const cols = renderable.cols || 3;
+      const cellWidth = renderable.width / cols;
+      const cellHeight = renderable.height / rows;
 
       for (let i = 0; i <= rows; i++) {
         group.add(
           new Konva.Line({
-            points: [0, i * cellHeight, element.width, i * cellHeight],
-            stroke: element.borderColor || "#000",
-            strokeWidth: element.borderWidth || 1,
+            points: [0, i * cellHeight, renderable.width, i * cellHeight],
+            stroke: renderable.borderColor || "#000",
+            strokeWidth: renderable.borderWidth || 1,
           }),
         );
       }
@@ -906,15 +1157,15 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       for (let i = 0; i <= cols; i++) {
         group.add(
           new Konva.Line({
-            points: [i * cellWidth, 0, i * cellWidth, element.height],
-            stroke: element.borderColor || "#000",
-            strokeWidth: element.borderWidth || 1,
+            points: [i * cellWidth, 0, i * cellWidth, renderable.height],
+            stroke: renderable.borderColor || "#000",
+            strokeWidth: renderable.borderWidth || 1,
           }),
         );
       }
 
-      if (element.tableData) {
-        element.tableData.forEach((row, rowIndex) => {
+      if (renderable.tableData) {
+        renderable.tableData.forEach((row, rowIndex) => {
           row.forEach((cell, colIndex) => {
             group.add(
               new Konva.Text({
@@ -923,9 +1174,9 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
                 width: cellWidth,
                 height: cellHeight,
                 text: cell || "",
-                fontSize: element.fontSize || 14,
-                fontFamily: element.fontFamily || "sans-serif",
-                fill: element.color || "#000000",
+                fontSize: renderable.fontSize || 14,
+                fontFamily: renderable.fontFamily || "sans-serif",
+                fill: renderable.color || "#000000",
                 align: "center",
                 verticalAlign: "middle",
               }),
@@ -937,19 +1188,19 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       return group;
     }
 
-    if (element.type === "video") {
+    if (renderable.type === "video") {
       const group = new Konva.Group({
         ...baseConfig,
-        width: element.width,
-        height: element.height,
+        width: renderable.width,
+        height: renderable.height,
       });
 
       group.add(
         new Konva.Rect({
           x: 0,
           y: 0,
-          width: element.width,
-          height: element.height,
+          width: renderable.width,
+          height: renderable.height,
           fill: "#1a1a1a",
         }),
       );
@@ -957,8 +1208,8 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       group.add(
         new Konva.Text({
           x: 0,
-          y: element.height / 2 - 20,
-          width: element.width,
+          y: renderable.height / 2 - 20,
+          width: renderable.width,
           text: "VIDEO",
           fontSize: 24,
           fontFamily: "Arial",
@@ -970,9 +1221,9 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       group.add(
         new Konva.Text({
           x: 0,
-          y: element.height / 2 + 10,
-          width: element.width,
-          text: `${element.duration || 0}s`,
+          y: renderable.height / 2 + 10,
+          width: renderable.width,
+          text: `${renderable.duration || 0}s`,
           fontSize: 14,
           fontFamily: "Arial",
           fill: "#999999",
