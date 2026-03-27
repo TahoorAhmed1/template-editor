@@ -124,20 +124,20 @@ const tools: ToolItem[] = [
     description: "Transform your ideas with AI",
     modes: ["image", "video"],
   },
-  {
-    id: "record",
-    label: "Record",
-    icon: CircleDot,
-    description: "Capture photos, videos, or audio",
-    modes: ["image", "video"],
-  },
-  {
-    id: "slideshow",
-    label: "Slideshow",
-    icon: PanelsTopLeft,
-    description: "Create text, photo, and video slideshows",
-    modes: ["image", "video"],
-  },
+  // {
+  //   id: "record",
+  //   label: "Record",
+  //   icon: CircleDot,
+  //   description: "Capture photos, videos, or audio",
+  //   modes: ["image", "video"],
+  // },
+  // {
+  //   id: "slideshow",
+  //   label: "Slideshow",
+  //   icon: PanelsTopLeft,
+  //   description: "Create text, photo, and video slideshows",
+  //   modes: ["image", "video"],
+  // },
   {
     id: "draw",
     label: "Draw",
@@ -145,13 +145,13 @@ const tools: ToolItem[] = [
     description: "Use a free-hand drawing tool",
     modes: ["image", "video"],
   },
-  {
-    id: "layout",
-    label: "Layout",
-    icon: LayoutTemplate,
-    description: "Add schedules, menus, tables, and more",
-    modes: ["image", "video"],
-  },
+  // {
+  //   id: "layout",
+  //   label: "Layout",
+  //   icon: LayoutTemplate,
+  //   description: "Add schedules, menus, tables, and more",
+  //   modes: ["image", "video"],
+  // },
   {
     id: "background",
     label: "Background",
@@ -543,10 +543,10 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           <button
             onClick={() => handleDockTabClick(primaryTab.id)}
             className={`flex min-w-[72px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 transition-colors ${
-              openTab === primaryTab.id ? "text-primary" : "text-foreground"
+              openTab === primaryTab.id ? "text-[#7650e3]" : "text-foreground"
             }`}
           >
-            <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#7650e3] text-primary-foreground">
               <primaryTab.icon size={18} strokeWidth={1.8} />
             </div>
             <span className="whitespace-nowrap text-[11px] font-medium">
@@ -566,7 +566,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                     onClick={() => handleDockTabClick(tab.id)}
                     className={`flex min-w-[78px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 transition-colors ${
                       isActive
-                        ? "bg-primary/10 text-primary"
+                        ? "bg-[#7650e3]/10 text-[#7650e3]"
                         : "text-muted-foreground"
                     }`}
                   >

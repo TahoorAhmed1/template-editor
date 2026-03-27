@@ -1620,7 +1620,7 @@ const DownloadModal: React.FC<{
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => onDownload("png")}
-            className="h-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="h-10 rounded-lg bg-[#7650e3] text-primary-foreground hover:bg-[#7650e3]/90 transition-colors"
           >
             PNG
           </button>
@@ -1691,7 +1691,7 @@ const ResizeModal: React.FC<{
           </div>
           <button
             onClick={() => onResize({ ...currentSize, width: customWidth, height: customHeight })}
-            className="w-full h-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="w-full h-10 rounded-lg bg-[#7650e3] text-primary-foreground hover:bg-[#7650e3]/90 transition-colors"
           >
             Apply Resize
           </button>
@@ -1728,7 +1728,7 @@ const AIModal: React.FC<{
           />
           <button
             onClick={() => onGenerate(prompt)}
-            className="w-full h-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="w-full h-10 rounded-lg bg-[#7650e3] text-primary-foreground hover:bg-[#7650e3]/90 transition-colors"
           >
             Generate
           </button>

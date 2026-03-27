@@ -37,7 +37,7 @@ const CardOption: React.FC<{
   <button
     type="button"
     onClick={onClick}
-    className="flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left transition hover:bg-[#f7fbff]"
+    className="flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left transition hover:bg-[#f3efff]"
   >
     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f3efff] text-[#7650e3]">
       {icon}
@@ -79,7 +79,7 @@ const DrawBrushPreview: React.FC<{
     <div
       className={`flex h-[42px] w-full items-center justify-center rounded-md border transition ${
         active
-          ? "border-[#f3efff] bg-[#7650e3] shadow-[inset_0_0_0_1px_rgba(83,184,234,0.18)]"
+          ? "border-[#f3efff] bg-white shadow-[inset_0_0_0_1px_rgba(83,184,234,0.18)]"
           : "border-[#D9E2EC] bg-white hover:bg-[#f3efff]"
       }`}
     >
@@ -268,7 +268,7 @@ export const DrawFlyout: React.FC<{
 
   return (
     <div className="flex max-h-[85vh] flex-col overflow-hidden bg-[#fbfbfc]">
-      <div className="border-b border-[#DDE3EA] px-5 py-4 text-center text-[22px] font-semibold tracking-[-0.02em] text-[#3f4a5f]">
+      <div className="border-b border-[#DDE3EA] px-5 py-4 text-center text-[22px] font-semibold tracking-[-0.02em] text-[#7650e3]">
         Draw
       </div>
 

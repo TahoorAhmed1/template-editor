@@ -133,13 +133,13 @@ export const TimelineBar: React.FC<TimelineBarProps> = ({
       >
         <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 bg-muted rounded-full overflow-hidden">
           <div
-            className="h-full bg-primary rounded-full transition-[width] duration-75"
+            className="h-full bg-[#7650e3] rounded-full transition-[width] duration-75"
             style={{ width: `${progress}%` }}
           />
         </div>
         {/* Playhead */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary border-2 border-primary-foreground shadow-md transition-[left] duration-75"
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#7650e3] border-2 border-[#7650e3]-foreground shadow-md transition-[left] duration-75"
           style={{ left: `calc(${progress}% - 6px)` }}
         />
         {/* Tick marks */}

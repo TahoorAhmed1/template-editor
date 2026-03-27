@@ -67,7 +67,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({
                   onClick={() => onSelectLayer(layer.id)}
                   className={`mb-2 flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${
                     selected
-                      ? "border-primary bg-primary/5"
+                      ? "border-[#7650e3] bg-[#7650e3]/5"
                       : "border-transparent bg-accent/40 hover:border-editor-inspector-border hover:bg-accent/70"
                   }`}
                 >

@@ -126,7 +126,7 @@ const PrecisionControl: React.FC<{
           step={step}
           value={value}
           onChange={(event) => apply(Number(event.target.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#d7eefe] accent-[#4db3f7]"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#f3efff] accent-[#7650e3]"
         />
       </div>
     </div>
@@ -200,7 +200,7 @@ const IconToggleGroup: React.FC<{
           onClick={() => onSelect(item.key)}
           className={`flex h-8 items-center justify-center rounded-md border text-[11px] transition ${
             activeKeys.includes(item.key)
-              ? "border-[#9ed8fb] bg-[#dff2fe] text-[#33a8ef]"
+              ? "border-[#7650e3] bg-[#7650e3]/20 text-[#7650e3]"
               : "border-[#d7dce3] bg-white text-[#6b7280] hover:bg-[#f7f9fb]"
           }`}
         >
@@ -334,7 +334,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           <button
             type="button"
             onClick={startCanvasEdit}
-            className="inline-flex h-9 items-center justify-center rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#2563eb] transition hover:bg-[#eef6ff]"
+            className="inline-flex h-9 items-center justify-center rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#7650e3] transition "
           >
             Edit directly on canvas
           </button>
@@ -360,7 +360,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setFontMenuOpen((open) => !open)}
-                className="inline-flex h-8 items-center gap-1 text-[13px] font-medium text-[#35a7ec] transition hover:text-[#1695df]"
+                className="inline-flex h-8 items-center gap-1 text-[13px] font-medium text-[#7650e3] transition "
               >
                 <span>{getCurrentFontLabel(selectedText.fontFamily)}</span>
                 <ChevronDown size={14} className="text-[#8a94a3]" />
@@ -660,7 +660,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           <p className="text-[11px] leading-5 text-[#9ca3af]">
             You can add a link to any web page. Links are clickable in these options.
           </p>
-          <div className="space-y-1 bg-[#f6f7f9] px-2 py-2 text-[11px] text-[#2aa4eb]">
+          <div className="space-y-1 bg-[#f6f7f9] px-2 py-2 text-[11px] text-[#7650e3]">
 
             <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
               <span className="text-[#5dc0f4]">✓</span>

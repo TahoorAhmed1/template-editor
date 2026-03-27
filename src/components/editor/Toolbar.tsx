@@ -36,7 +36,7 @@ const tools: ToolItem[] = [
   { id: "text", label: "Text", icon: Type, modes: ["image", "video"] },
   { id: "ai", label: "AI", icon: Sparkles, modes: ["image", "video"] },
   { id: "background", label: "Background", icon: ScanLine, modes: ["image", "video"] },
-  { id: "layout", label: "Layout", icon: LayoutTemplate, modes: ["image", "video"] },
+  // { id: "layout", label: "Layout", icon: LayoutTemplate, modes: ["image", "video"] },
   // { id: "record", label: "Record", icon: CircleDot, modes: ["image", "video"] },
   { id: "draw", label: "Draw", icon: Paintbrush, modes: ["image", "video"] },
   // { id: "slideshow", label: "Slideshow", icon: PanelsTopLeft, modes: ["image", "video"] },
@@ -177,8 +177,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => onToolClick(tool.id)}
                 className={`relative flex h-[62px] w-full flex-col items-center justify-center rounded-xl border transition-colors duration-150 ${
                   isActive
-                    ? "border-[#bee3f8] bg-[#e6f6ff] text-[#7650e3]"
-                    : "border-transparent text-[#4A5568] hover:bg-[#f7fbff] hover:text-[#7650e3]"
+                    ? "border-[#bee3f8] bg-[#f3efff] text-[#7650e3]"
+                    : "border-transparent text-[#4A5568] hover:bg-[#f3efff] hover:text-[#7650e3]"
                 }`}
               >
                 <tool.icon size={18} strokeWidth={1.75} />

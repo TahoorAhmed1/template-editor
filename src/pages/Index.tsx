@@ -248,7 +248,7 @@ const Index = () => {
               onClick={() => { setActiveTab(tab); setSearchQuery(""); }}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
                 activeTab === tab
-                  ? "text-primary border-b-2 border-primary bg-primary/5"
+                  ? "text-primary border-b-2 border-[#7650e3] bg-[#7650e3]/5"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
             >
@@ -267,7 +267,7 @@ const Index = () => {
               onClick={handleUpload}
               className="flex flex-col items-center gap-2 min-w-[100px] group"
             >
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent border-2 border-dashed border-border group-hover:border-primary/50 flex items-center justify-center transition-colors">
+              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent border-2 border-dashed border-border group-hover:border-[#7650e3]/50 flex items-center justify-center transition-colors">
                 <Upload size={24} className="text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
               <span className="text-xs font-medium text-foreground">Upload</span>
@@ -278,7 +278,7 @@ const Index = () => {
               <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 border-2 border-dashed border-violet-200 group-hover:border-violet-400 flex items-center justify-center transition-colors">
                 <Sparkles size={24} className="text-violet-500" />
               </div>
-              <span className="text-xs font-medium text-primary">Create with AI</span>
+              <span className="text-xs font-medium text-[#7650e3]">Create with AI</span>
             </button>
 
             {/* Custom Dimensions */}
@@ -286,7 +286,7 @@ const Index = () => {
               onClick={() => setShowCustomDimensions(true)}
               className="flex flex-col items-center gap-2 min-w-[100px] group"
             >
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent border-2 border-dashed border-border group-hover:border-primary/50 flex items-center justify-center transition-colors">
+              <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent border-2 border-dashed border-border group-hover:border-[#7650e3]/50 flex items-center justify-center transition-colors">
                 <SlidersHorizontal size={24} className="text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
               <span className="text-xs font-medium text-foreground">Custom Dimensions</span>
@@ -299,7 +299,7 @@ const Index = () => {
                 onClick={() => setEditorState({ mode: "image", preset })}
                 className="flex flex-col items-center gap-2 min-w-[100px] group"
               >
-                <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent/50 border border-border group-hover:border-primary/50 flex items-center justify-center transition-colors overflow-hidden">
+                <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-accent/50 border border-border group-hover:border-[#7650e3]/50 flex items-center justify-center transition-colors overflow-hidden">
                   <div
                     className="bg-muted border border-border rounded-sm"
                     style={{
@@ -347,7 +347,7 @@ const Index = () => {
               </div>
               <button
                 onClick={handleCustomCreate}
-                className="w-full h-10 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+                className="w-full h-10 bg-[#7650e3] text-primary-foreground text-sm font-semibold rounded-lg hover:bg-[#7650e3]/90 transition-colors"
               >
                 Create Design
               </button>
@@ -442,14 +442,14 @@ const PresetCard: React.FC<{
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-2 p-3 min-w-[120px] rounded-xl border border-border hover:border-primary/50 hover:shadow-md bg-background transition-all group"
+      className="flex flex-col items-center gap-2 p-3 min-w-[120px] rounded-xl border border-border hover:border-[#7650e3]/50 hover:shadow-md bg-background transition-all group"
     >
       <div className="w-20 h-20 flex items-center justify-center">
         <div
           className={`rounded-sm border transition-colors ${
             isVideo
               ? "bg-purple-50 border-purple-200 group-hover:border-purple-400"
-              : "bg-muted border-border group-hover:border-primary/40"
+              : "bg-muted border-border group-hover:border-[#7650e3]/40"
           }`}
           style={{ width: thumbW, height: thumbH }}
         >

@@ -675,7 +675,7 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
                 onClick={() => updateAnimationPhase(phase)}
                 className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize transition ${
                   activePhase === phase
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "border-[#7650e3] bg-[#7650e3]/10 text-[#7650e3]"
                     : "border-editor-inspector-border bg-accent/30 text-muted-foreground"
                 }`}
               >
@@ -837,7 +837,7 @@ const DesignToggleRow: React.FC<{ label: string; on: boolean; onToggle: (on: boo
     <button
       type="button"
       onClick={() => onToggle(!on)}
-      className={`relative flex h-8 w-12 items-center rounded-full p-0.5 transition-colors ${on ? "bg-[#46c0f1]" : "bg-[#eceff3]"}`}
+      className={`relative flex h-8 w-12 items-center rounded-full p-0.5 transition-colors ${on ? "bg-[#7650e3]" : "bg-[#eceff3]"}`}
     >
       <span
         className={`h-7 w-7 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-4" : "translate-x-0"}`}

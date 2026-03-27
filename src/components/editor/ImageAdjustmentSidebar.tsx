@@ -178,7 +178,7 @@ const PrecisionControl: React.FC<{
           step={step}
           value={value}
           onChange={(event) => apply(Number(event.target.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#d7eefe] accent-[#4db3f7]"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#f3efff] accent-[#7650e3]"
         />
       </div>
     </div>
