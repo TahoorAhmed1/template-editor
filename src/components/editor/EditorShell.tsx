@@ -339,6 +339,27 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   []
 );
 
+  const handleEditorPointerDownCapture = React.useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const target = e.target;
+
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      const element = target instanceof HTMLElement ? target : null;
+      if (element?.closest('[contenteditable="true"]')) {
+        return;
+      }
+
+      editorRootRef.current?.focus();
+    },
+    [],
+  );
+
   const handleCanvasSizeChange = useCallback(
     (preset: CanvasSizePreset) => {
       const oldSize = canvasSize;
@@ -703,7 +724,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
     ref={editorRootRef}
     tabIndex={0}
     // onMouseDownCapture={() => editorRootRef.current?.focus()}
-    onPointerDownCapture={() => editorRootRef.current?.focus()}
+    onPointerDownCapture={handleEditorPointerDownCapture}
     className="h-screen w-screen flex flex-col overflow-hidden bg-gray-100 outline-none"
   >
       <TopBar
@@ -802,7 +823,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
     ref={editorRootRef}
     tabIndex={0}
     // onMouseDownCapture={() => editorRootRef.current?.focus()}
-    onPointerDownCapture={() => editorRootRef.current?.focus()}
+    onPointerDownCapture={handleEditorPointerDownCapture}
     className="h-screen w-screen flex flex-col overflow-hidden bg-[#f7f7f8] outline-none"
   >
       <TopBar

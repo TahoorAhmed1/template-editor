@@ -76,6 +76,10 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   const gridLayerRef = useRef<Konva.Layer | null>(null);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const inlineEditorRef = useRef<InlineEditorState | null>(null);
+  const editingTextRef = useRef("");
+  const isClosingRef = useRef(false);
+  const closeInlineEditingRef = useRef<(save: boolean) => void>(() => {});
 
   const [inlineEditor, setInlineEditor] = useState<InlineEditorState | null>(
     null,
@@ -108,8 +112,8 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
 
       return {
         id: element.id,
-        x: pos.x * scale,
-        y: pos.y * scale,
+        x: pos.x,
+        y: pos.y,
         width,
         height,
         fontSize: element.fontSize || 24,
@@ -124,46 +128,104 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     [scale],
   );
 
+  const syncInlineEditorSize = useCallback(
+    (editor: InlineEditorState, textarea: HTMLTextAreaElement) => {
+      textarea.style.width = "auto";
+      textarea.style.height = "auto";
+
+      const nextWidth = Math.max(editor.width, textarea.scrollWidth + 2);
+      const nextHeight = Math.max(editor.height, textarea.scrollHeight);
+
+      textarea.style.width = `${nextWidth}px`;
+      textarea.style.height = `${nextHeight}px`;
+
+      return {
+        width: nextWidth,
+        height: nextHeight,
+      };
+    },
+    [],
+  );
+
   const startInlineEditing = useCallback(
     (element: CanvasElement, node: Konva.Text) => {
+      // If already editing, commit current edit first
+      if (inlineEditorRef.current && !isClosingRef.current) {
+        isClosingRef.current = true;
+        const prevId = inlineEditorRef.current.id;
+        const prevTextarea = textInputRef.current;
+        const prevText = prevTextarea?.value ?? editingTextRef.current;
+        const prevNode = shapeRefs.current.get(prevId);
+        if (prevNode instanceof Konva.Text) prevNode.show();
+        onUpdateElement(prevId, { content: prevText });
+        isClosingRef.current = false;
+      }
+
       node.hide();
       layerRef.current?.draw();
 
-      setEditingText(element.content || "");
-      setInlineEditor(getInlineEditorState(element, node));
+      const nextEditingText = element.content || "";
+      const nextInlineEditor = getInlineEditorState(element, node);
+
+      editingTextRef.current = nextEditingText;
+      inlineEditorRef.current = nextInlineEditor;
+      setEditingText(nextEditingText);
+      setInlineEditor(nextInlineEditor);
       onSelectElement(element.id);
     },
-    [getInlineEditorState, onSelectElement],
+    [getInlineEditorState, onSelectElement, onUpdateElement],
   );
 
   const closeInlineEditing = useCallback(
     (save: boolean) => {
-      if (!inlineEditor) return;
+      if (isClosingRef.current) return;
+      const currentInlineEditor = inlineEditorRef.current;
+      if (!currentInlineEditor) return;
 
-      const node = shapeRefs.current.get(inlineEditor.id);
+      isClosingRef.current = true;
+      inlineEditorRef.current = null;
+
+      const textarea = textInputRef.current;
+      const nextText = textarea?.value ?? editingTextRef.current;
+      const nextSize =
+        textarea != null
+          ? syncInlineEditorSize(currentInlineEditor, textarea)
+          : {
+              width: currentInlineEditor.width,
+              height: currentInlineEditor.height,
+            };
+
+      // Show the Konva text node immediately so it's visible before React re-renders
+      const node = shapeRefs.current.get(currentInlineEditor.id);
       if (node instanceof Konva.Text) {
         node.show();
       }
-
-      if (save) {
-        const textarea = textInputRef.current;
-        const nextHeight =
-          textarea != null
-            ? Math.max(inlineEditor.height, textarea.scrollHeight)
-            : inlineEditor.height;
-
-        onUpdateElement(inlineEditor.id, {
-          content: editingText,
-          height: Math.max(1, Math.round(nextHeight / scale)),
-        });
-      }
+      layerRef.current?.draw();
 
       setInlineEditor(null);
       setEditingText("");
-      layerRef.current?.draw();
+      editingTextRef.current = "";
+
+      if (save) {
+        onUpdateElement(currentInlineEditor.id, {
+          content: nextText,
+          width: Math.max(1, Math.round(nextSize.width / scale)),
+          height: Math.max(1, Math.round(nextSize.height / scale)),
+        });
+      }
+
+      isClosingRef.current = false;
     },
-    [editingText, inlineEditor, onUpdateElement, scale],
+    [onUpdateElement, scale, syncInlineEditorSize],
   );
+
+  useEffect(() => {
+    editingTextRef.current = editingText;
+  }, [editingText]);
+
+  useEffect(() => {
+    closeInlineEditingRef.current = closeInlineEditing;
+  }, [closeInlineEditing]);
 
   useEffect(() => {
     if (!konvaContainerRef.current) return;
@@ -221,16 +283,21 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     syncStageScale();
   }, [syncStageScale]);
 
+  // Re-position the inline editor when zoom changes (but not on every elements change)
   useEffect(() => {
-    if (!inlineEditor) return;
-    const node = shapeRefs.current.get(inlineEditor.id);
+    const currentEditor = inlineEditorRef.current;
+    if (!currentEditor) return;
+    const node = shapeRefs.current.get(currentEditor.id);
     if (!(node instanceof Konva.Text)) return;
 
-    const element = elements.find((el) => el.id === inlineEditor.id);
+    const element = elements.find((el) => el.id === currentEditor.id);
     if (!element) return;
 
-    setInlineEditor(getInlineEditorState(element, node));
-  }, [inlineEditor?.id, elements, zoom, getInlineEditorState, inlineEditor]);
+    const updated = getInlineEditorState(element, node);
+    inlineEditorRef.current = updated;
+    setInlineEditor(updated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
 
   useEffect(() => {
     const layer = layerRef.current;
@@ -448,17 +515,39 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
     const len = textarea.value.length;
     textarea.setSelectionRange(len, len);
 
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.max(inlineEditor.height, textarea.scrollHeight)}px`;
-  }, [inlineEditor]);
+    const nextSize = syncInlineEditorSize(inlineEditor, textarea);
+    if (
+      nextSize.width !== inlineEditor.width ||
+      nextSize.height !== inlineEditor.height
+    ) {
+      const updated = {
+        ...inlineEditor,
+        width: nextSize.width,
+        height: nextSize.height,
+      };
+      inlineEditorRef.current = updated;
+      setInlineEditor(updated);
+    }
+  }, [inlineEditor, syncInlineEditorSize]);
 
   useEffect(() => {
     if (!inlineEditor || !textInputRef.current) return;
 
     const textarea = textInputRef.current;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.max(inlineEditor.height, textarea.scrollHeight)}px`;
-  }, [editingText, inlineEditor]);
+    const nextSize = syncInlineEditorSize(inlineEditor, textarea);
+    if (
+      nextSize.width !== inlineEditor.width ||
+      nextSize.height !== inlineEditor.height
+    ) {
+      const updated = {
+        ...inlineEditor,
+        width: nextSize.width,
+        height: nextSize.height,
+      };
+      inlineEditorRef.current = updated;
+      setInlineEditor(updated);
+    }
+  }, [editingText, inlineEditor, syncInlineEditorSize]);
 
   const handleEditingChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -468,8 +557,12 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   );
 
   const handleEditingBlur = useCallback(() => {
-    closeInlineEditing(true);
-  }, [closeInlineEditing]);
+    // Use setTimeout(0) so the blur completes before we mutate state.
+    // This avoids races with React's focus management and Konva's click handlers.
+    setTimeout(() => {
+      closeInlineEditingRef.current(true);
+    }, 0);
+  }, []);
 
   const handleEditingKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -639,6 +732,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
                 onChange={handleEditingChange}
                 onBlur={handleEditingBlur}
                 onKeyDown={handleEditingKeyDown}
+                onPointerDown={(e) => e.stopPropagation()}
                 spellCheck={false}
                 className="absolute resize-none overflow-hidden focus:outline-none"
                 style={{
