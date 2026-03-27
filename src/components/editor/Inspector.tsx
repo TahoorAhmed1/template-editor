@@ -316,10 +316,7 @@ export const DesignInspector: React.FC<{
 
             <DesignToggleRow label="Alignment Guides" on={alignmentGuides} onToggle={onAlignmentGuidesToggle} />
           </div>
-          <div className="mt-10 flex items-center justify-center gap-2 text-[12px] text-[#7c8798]">
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-[#e6f6ff] text-[#7cc4ee]">◉</div>
-            <span>Designed by <span className="font-semibold text-[#4A5568]">Design House</span></span>
-          </div>
+         
         </div>
       )}
     </div>
