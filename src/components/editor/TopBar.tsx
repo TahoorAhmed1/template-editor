@@ -61,13 +61,7 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
           >
             <Redo2 size={16} strokeWidth={1.5} className="text-primary-foreground/80" />
           </button>
-          <button
-            onClick={onDownload}
-            className="inline-flex items-center gap-1 rounded-md bg-[#7650e3]-foreground px-3 py-2 text-xs font-semibold text-primary transition-colors"
-          >
-            <Download size={13} strokeWidth={1.5} />
-            Save
-          </button>
+   
           <button className="rounded-md p-2 hover:bg-[#7650e3]-foreground/10 transition-colors">
             <MoreHorizontal size={18} strokeWidth={1.5} className="text-primary-foreground/80" />
           </button>

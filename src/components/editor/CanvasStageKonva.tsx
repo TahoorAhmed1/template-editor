@@ -8,6 +8,7 @@ import React, {
 import { ZoomIn, ZoomOut } from "lucide-react";
 import Konva from "konva";
 import type { ActiveTool, CanvasElement, DrawSettings } from "./EditorShell";
+import { getLinearGradientPoints as getSharedLinearGradientPoints, getRadialGradientGeometry, parseLinearGradient as parseSharedLinearGradient, parseRadialGradient } from "./backgroundUtils";
 import { LayerEffectOverlay } from "./LayerEffectOverlay";
 import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
 import { useTextEditStore } from "@/stores/useTextEditStore";
@@ -1754,6 +1755,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     onClearPreviewElement,
     scheduleTransformPreview,
     getCanvasPointerPosition,
+    stageActivateEvent,
+    stageDoubleActivateEvent,
+    stagePressEvent,
   ]);
 
   useEffect(() => {
@@ -2794,9 +2798,9 @@ function createCanvasBackgroundNode(
     return null;
   }
 
-  const gradient = parseLinearGradient(canvasBackground);
-  if (gradient) {
-    const { start, end } = getGradientPoints(gradient.angleDeg, width, height);
+  const linearGradient = parseSharedLinearGradient(canvasBackground);
+  if (linearGradient) {
+    const { start, end } = getSharedLinearGradientPoints(linearGradient.angleDeg, width, height);
     return new Konva.Rect({
       x: 0,
       y: 0,
@@ -2807,7 +2811,31 @@ function createCanvasBackgroundNode(
       fillPriority: "linear-gradient",
       fillLinearGradientStartPoint: start,
       fillLinearGradientEndPoint: end,
-      fillLinearGradientColorStops: gradient.colorStops.flatMap((stop) => [
+      fillLinearGradientColorStops: linearGradient.colorStops.flatMap((stop) => [
+        stop.offset,
+        stop.color,
+      ]),
+      name: "canvas-background",
+    });
+  }
+
+  const radialGradient = parseRadialGradient(canvasBackground);
+  if (radialGradient) {
+    const geometry = getRadialGradientGeometry(radialGradient, width, height);
+
+    return new Konva.Rect({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      listening: false,
+      draggable: false,
+      fillPriority: "radial-gradient",
+      fillRadialGradientStartPoint: geometry.startPoint,
+      fillRadialGradientStartRadius: geometry.startRadius,
+      fillRadialGradientEndPoint: geometry.endPoint,
+      fillRadialGradientEndRadius: geometry.endRadius,
+      fillRadialGradientColorStops: radialGradient.colorStops.flatMap((stop) => [
         stop.offset,
         stop.color,
       ]),

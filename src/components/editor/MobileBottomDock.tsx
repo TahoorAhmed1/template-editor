@@ -293,6 +293,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         return (
           <DesignInspector
             canvasSize={canvasSize}
+            onCanvasSizeChange={onCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={onBackgroundChange}
             designTitle={designTitle}
@@ -314,6 +315,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         return (
           <DesignInspector
             canvasSize={canvasSize}
+            onCanvasSizeChange={onCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={onBackgroundChange}
             designTitle={designTitle}
@@ -335,6 +337,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         return (
           <DesignInspector
             canvasSize={canvasSize}
+            onCanvasSizeChange={onCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={onBackgroundChange}
             designTitle={designTitle}
@@ -356,6 +359,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         return (
           <DesignInspector
             canvasSize={canvasSize}
+            onCanvasSizeChange={onCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={onBackgroundChange}
             designTitle={designTitle}
@@ -377,6 +381,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         return (
           <DesignInspector
             canvasSize={canvasSize}
+            onCanvasSizeChange={onCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={onBackgroundChange}
             designTitle={designTitle}

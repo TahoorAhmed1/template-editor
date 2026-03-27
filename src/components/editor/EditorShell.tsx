@@ -230,12 +230,6 @@ const normalizeLayer = (
   layer: CanvasElement,
   fallbackZIndex: number,
 ): CanvasElement => ({
-  scale: 1,
-  opacity: 100,
-  visible: true,
-  zIndex: fallbackZIndex,
-  animationProps: createDefaultAnimationProps(),
-  effectProps: createDefaultEffectProps(),
   ...layer,
   scale: layer.scale ?? 1,
   opacity: layer.opacity ?? 100,
@@ -1525,6 +1519,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
             onMoveLayer={moveElementLayer}
             onStartTextEditing={startTextEditing}
             canvasSize={canvasSize}
+            onCanvasSizeChange={handleCanvasSizeChange}
             canvasBackground={canvasBackground}
             onBackgroundChange={handleBackgroundChange}
             designTitle={designTitle}
@@ -1544,7 +1539,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
             onUpdateDrawSettings={updateDrawSettings}
             onFinishDrawing={handleFinishDrawing}
           />
-          {!showDrawInspector && (
+          {/* {!showDrawInspector && (
             <LayersPanel
               layers={layers}
               selectedLayerId={selectedLayerId}
@@ -1553,7 +1548,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
               onDeleteLayer={deleteElement}
               onReorderLayers={reorderLayers}
             />
-          )}
+          )} */}
         </div>
       </div>
 
