@@ -392,7 +392,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [zoom, setZoom] = React.useState(100);
   const [canvasSize, setCanvasSize] = React.useState<CanvasSizePreset>(safeInitialSize);
   const [canvasBackground, setCanvasBackground] = React.useState("#FFFFFF");
-  const [designTitle, setDesignTitle] = React.useState("A New Design");
+  const [designTitle, setDesignTitle] = React.useState("");
   const [requestedMobileTab, setRequestedMobileTab] = React.useState<
     "add" | "styles" | "resize" | "background" | "title" | "layout" | null
   >(null);
@@ -418,13 +418,11 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const clearTextEditRequest = useTextEditStore((state) => state.clearTextEditRequest);
 
-  const [elements, setElements] = React.useState<CanvasElement[]>(() => [
-    normalizeLayer(initialTitleElementRef.current!, 1),
-  ]);
+  const [elements, setElements] = React.useState<CanvasElement[]>(() => []);
   const [elementPreviewById, setElementPreviewById] = React.useState<Record<string, Partial<CanvasElement>>>({});
   const [history, setHistory] = React.useState<HistoryEntry[]>([
     {
-      elements: [normalizeLayer(initialTitleElementRef.current!, 1)],
+      elements: [],
       canvasBackground: "#FFFFFF",
     },
   ]);

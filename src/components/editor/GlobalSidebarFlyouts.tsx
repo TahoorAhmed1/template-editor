@@ -39,7 +39,7 @@ const CardOption: React.FC<{
     onClick={onClick}
     className="flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left transition hover:bg-[#f7fbff]"
   >
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eaf6ff] text-[#3182CE]">
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f3efff] text-[#7650e3]">
       {icon}
     </div>
     <div>
@@ -60,7 +60,7 @@ const DrawToolButton: React.FC<{
     onClick={onClick}
     className={`flex h-11 items-center justify-center rounded-xl border text-[12px] font-medium transition ${
       active
-        ? "border-[#90cdf4] bg-[#ebf8ff] text-[#3182CE]"
+        ? "border-[#90cdf4] bg-[#ebf8ff] text-[#7650e3]"
         : "border-[#E2E8F0] bg-white text-[#4A5568] hover:bg-[#f8fbfd]"
     }`}
   >
@@ -79,13 +79,13 @@ const DrawBrushPreview: React.FC<{
     <div
       className={`flex h-[42px] w-full items-center justify-center rounded-md border transition ${
         active
-          ? "border-[#53b8ea] bg-[#eef9ff] shadow-[inset_0_0_0_1px_rgba(83,184,234,0.18)]"
-          : "border-[#D9E2EC] bg-white hover:bg-[#f8fbfd]"
+          ? "border-[#f3efff] bg-[#7650e3] shadow-[inset_0_0_0_1px_rgba(83,184,234,0.18)]"
+          : "border-[#D9E2EC] bg-white hover:bg-[#f3efff]"
       }`}
     >
       {preview}
     </div>
-    <span className={`text-[12px] ${active ? "font-semibold text-[#0d8bc7]" : "font-medium text-[#7a7f91]"}`}>{label}</span>
+    <span className={`text-[12px] ${active ? "font-semibold text-[#7650e3]" : "font-medium text-[#7a7f91]"}`}>{label}</span>
   </button>
 );
 
@@ -286,7 +286,7 @@ export const DrawFlyout: React.FC<{
               onClick={() => selectTool("pencil")}
               preview={
                 <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true">
-                  <path d="M10 16C15 10 22 7 37 7" stroke="#1ea4df" strokeWidth="3.2" strokeLinecap="round" />
+                  <path d="M10 16C15 10 22 7 37 7" stroke="#7650e3" strokeWidth="3.2" strokeLinecap="round" />
                 </svg>
               }
             />
@@ -373,7 +373,7 @@ export const DrawFlyout: React.FC<{
                 step={1}
                 value={brushSize}
                 onChange={(event) => updateSettings({ brushSize: Number(event.target.value) })}
-                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#d9e8f5] accent-[#1aa3e0]"
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#f3efff] accent-[#7650e3]"
               />
             </div>
           </div>
@@ -384,7 +384,7 @@ export const DrawFlyout: React.FC<{
         <button
           type="button"
           onClick={finishDrawing}
-          className="h-11 w-full rounded-[8px] bg-[#41b6e6] text-sm font-semibold text-white shadow-sm transition hover:bg-[#2fa9dd]"
+          className="h-11 w-full rounded-[8px] bg-[#7650e3] text-sm font-semibold text-white shadow-sm transition "
         >
           Finish drawing
         </button>

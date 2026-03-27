@@ -907,7 +907,7 @@ const QRCodePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => v
 
       <button
         onClick={generateQR}
-        className="h-11 w-full rounded-xl bg-[#0d73aa] text-sm font-semibold text-white transition hover:bg-[#0b6798]"
+        className="h-11 w-full rounded-xl bg-[#7650e3] text-sm font-semibold text-white transition"
       >
         Add QR code
       </button>

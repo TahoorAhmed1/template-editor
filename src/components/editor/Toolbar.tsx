@@ -177,8 +177,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 onClick={() => onToolClick(tool.id)}
                 className={`relative flex h-[62px] w-full flex-col items-center justify-center rounded-xl border transition-colors duration-150 ${
                   isActive
-                    ? "border-[#bee3f8] bg-[#e6f6ff] text-[#3182CE]"
-                    : "border-transparent text-[#4A5568] hover:bg-[#f7fbff] hover:text-[#3182CE]"
+                    ? "border-[#bee3f8] bg-[#e6f6ff] text-[#7650e3]"
+                    : "border-transparent text-[#4A5568] hover:bg-[#f7fbff] hover:text-[#7650e3]"
                 }`}
               >
                 <tool.icon size={18} strokeWidth={1.75} />

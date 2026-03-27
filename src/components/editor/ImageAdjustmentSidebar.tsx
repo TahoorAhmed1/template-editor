@@ -348,7 +348,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
               onClick={() => updateAnimationPhase(item.key as "start" | "end")}
               className={`flex min-h-[54px] flex-col items-center justify-center rounded-md border transition ${
                 activePhase === item.key
-                  ? "border-[#9ed8fb] bg-[#eef9ff] text-[#33a8ef]"
+                  ? "border-[#9ed8fb] bg-[#7650e3] text-[#33a8ef]"
                   : "border-[#d7dce3] bg-white text-[#6b7280] hover:bg-[#f7f9fb]"
               }`}
             >

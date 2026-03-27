@@ -281,7 +281,7 @@ export const DesignInspector: React.FC<{
                   onClick={() => setAnimationPhase(item.key)}
                   className={`flex min-h-[68px] flex-col items-center justify-center rounded-md border border-dashed transition ${
                     animationPhase === item.key
-                      ? "border-[#8fd3f8] bg-[#eef9ff] text-[#33a8ef]"
+                      ? "border-[#8fd3f8] bg-[#7650e3] text-[#33a8ef]"
                       : "border-[#d7dce3] bg-white text-[#6b7280]"
                   }`}
                 >
