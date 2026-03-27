@@ -40,7 +40,7 @@ const tools: ToolItem[] = [
   // { id: "record", label: "Record", icon: CircleDot, modes: ["image", "video"] },
   { id: "draw", label: "Draw", icon: Paintbrush, modes: ["image", "video"] },
   // { id: "slideshow", label: "Slideshow", icon: PanelsTopLeft, modes: ["image", "video"] },
-  { id: "qrcode", label: "QR Code", icon: QrCode, modes: ["image", "video"] },
+  // { id: "qrcode", label: "QR Code", icon: QrCode, modes: ["image", "video"] },
 ];
 
 

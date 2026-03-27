@@ -159,13 +159,13 @@ const tools: ToolItem[] = [
     description: "Set solid, gradient, or image backgrounds",
     modes: ["image", "video"],
   },
-  {
-    id: "qrcode",
-    label: "QR Code",
-    icon: QrCode,
-    description: "Generate a QR code for your design",
-    modes: ["image", "video"],
-  },
+  // {
+  //   id: "qrcode",
+  //   label: "QR Code",
+  //   icon: QrCode,
+  //   description: "Generate a QR code for your design",
+  //   modes: ["image", "video"],
+  // },
 ];
 
 const designTabs = [
