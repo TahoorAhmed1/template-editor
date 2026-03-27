@@ -37,9 +37,9 @@ const tools: ToolItem[] = [
   { id: "ai", label: "AI", icon: Sparkles, modes: ["image", "video"] },
   { id: "background", label: "Background", icon: ScanLine, modes: ["image", "video"] },
   { id: "layout", label: "Layout", icon: LayoutTemplate, modes: ["image", "video"] },
-  { id: "record", label: "Record", icon: CircleDot, modes: ["image", "video"] },
+  // { id: "record", label: "Record", icon: CircleDot, modes: ["image", "video"] },
   { id: "draw", label: "Draw", icon: Paintbrush, modes: ["image", "video"] },
-  { id: "slideshow", label: "Slideshow", icon: PanelsTopLeft, modes: ["image", "video"] },
+  // { id: "slideshow", label: "Slideshow", icon: PanelsTopLeft, modes: ["image", "video"] },
   { id: "qrcode", label: "QR Code", icon: QrCode, modes: ["image", "video"] },
 ];
 

@@ -661,14 +661,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             You can add a link to any web page. Links are clickable in these options.
           </p>
           <div className="space-y-1 bg-[#f6f7f9] px-2 py-2 text-[11px] text-[#2aa4eb]">
-            <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
-              <span className="text-[#5dc0f4]">✓</span>
-              Download as PDF
-            </button>
-            <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
-              <span className="text-[#5dc0f4]">✓</span>
-              Publish as Webpage
-            </button>
+
             <button type="button" className="flex items-center gap-1.5 text-left hover:underline">
               <span className="text-[#5dc0f4]">✓</span>
               Publish as Embedded Link
