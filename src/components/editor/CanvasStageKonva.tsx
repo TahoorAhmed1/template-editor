@@ -155,13 +155,16 @@ function clampViewportOffset(
   gutter: number,
 ) {
   const safeViewport = Math.max(1, viewportSize);
+
   if (contentSize <= safeViewport - gutter * 2) {
-    return Math.round((safeViewport - contentSize) / 2);
+    const centered = (safeViewport - contentSize) / 2;
+    const slack = Math.min(64, Math.max(18, (safeViewport - contentSize) / 2 - gutter));
+    return clamp(Math.round(value), Math.round(centered - slack), Math.round(centered + slack));
   }
 
   const minOffset = safeViewport - contentSize - gutter;
   const maxOffset = gutter;
-  return clamp(Math.round(value), minOffset, maxOffset);
+  return clamp(Math.round(value), Math.round(minOffset), Math.round(maxOffset));
 }
 
 function getOppositeCorner(bounds: GuideBounds, activeAnchor: string | null): ViewportPoint {
@@ -217,13 +220,22 @@ function getAnchoredBoxFromCorner(
   }
 }
 
-function applyImageNodeCrop(node: Konva.Image, width: number, height: number) {
+function applyMediaNodeCrop(node: Konva.Image, width: number, height: number) {
   const source = node.image();
-  if (!(source instanceof HTMLImageElement)) return;
 
-  const crop = getCoverCrop(source, width, height);
-  if (crop) {
-    node.crop(crop);
+  if (source instanceof HTMLImageElement) {
+    const crop = getCoverCrop(source, width, height);
+    if (crop) {
+      node.crop(crop);
+    }
+    return;
+  }
+
+  if (source instanceof HTMLVideoElement) {
+    const crop = getVideoCoverCrop(source, width, height);
+    if (crop) {
+      node.crop(crop);
+    }
   }
 }
 
@@ -328,7 +340,7 @@ function getTextTransformPreview(
         x: originalBounds.x,
         y: originalBounds.y,
         width,
-        height: measured.height,
+        height: Math.max(originalBounds.height, measured.height),
       },
       fontSize: baseFontSize,
     };
@@ -342,7 +354,7 @@ function getTextTransformPreview(
         x: originalBounds.x + (originalBounds.width - width),
         y: originalBounds.y,
         width,
-        height: measured.height,
+        height: Math.max(originalBounds.height, measured.height),
       },
       fontSize: baseFontSize,
     };
@@ -350,36 +362,42 @@ function getTextTransformPreview(
 
   if (activeAnchor === "top-center" || activeAnchor === "bottom-center") {
     const heightDirection = activeAnchor === "top-center" ? -1 : 1;
-    const currentHeight = Math.max(20, originalBounds.height + deltaY * heightDirection);
-    const scaleFactor = Math.max(0.2, currentHeight / Math.max(1, originalBounds.height));
-    const fontSize = Math.max(8, Math.round(baseFontSize * scaleFactor));
-    const width = Math.max(40, Math.round(originalBounds.width * scaleFactor));
-    const measured = measureTextBox(originalElement, width, fontSize);
+    const height = Math.max(20, Math.round(originalBounds.height + deltaY * heightDirection));
     return {
       bounds: {
-        x: originalBounds.x + (originalBounds.width - measured.width) / 2,
+        x: originalBounds.x,
         y:
           activeAnchor === "top-center"
-            ? originalBounds.y + (originalBounds.height - measured.height)
+            ? originalBounds.y + (originalBounds.height - height)
             : originalBounds.y,
-        width: measured.width,
-        height: measured.height,
+        width: originalBounds.width,
+        height,
       },
-      fontSize,
+      fontSize: baseFontSize,
     };
   }
 
-  // Corner drag: scale fontSize by height ratio (PosterMyWall rule)
+  // Corner drag: uniformly scale the whole text object (box + font)
+  const widthDirection = activeAnchor?.includes("left") ? -1 : 1;
   const heightDirection = activeAnchor?.startsWith("top") ? -1 : 1;
-  const currentHeight = Math.max(20, originalBounds.height + deltaY * heightDirection);
-  const scaleFactor = Math.max(0.2, currentHeight / Math.max(1, originalBounds.height));
+  const normalizedDeltaX = (deltaX * widthDirection) / Math.max(1, originalBounds.width);
+  const normalizedDeltaY = (deltaY * heightDirection) / Math.max(1, originalBounds.height);
+  const dominantDelta =
+    Math.abs(normalizedDeltaX) >= Math.abs(normalizedDeltaY)
+      ? normalizedDeltaX
+      : normalizedDeltaY;
+  const scaleFactor = Math.max(
+    getMinimumScaleFactor(originalBounds.width, originalBounds.height),
+    1 + dominantDelta,
+  );
   const fontSize = Math.max(8, Math.round(baseFontSize * scaleFactor));
   const width = Math.max(40, Math.round(originalBounds.width * scaleFactor));
   const measured = measureTextBox(originalElement, width, fontSize);
+  const height = Math.max(Math.round(originalBounds.height * scaleFactor), measured.height);
   const fixedCorner = getOppositeCorner(originalBounds, activeAnchor);
 
   return {
-    bounds: getAnchoredBoxFromCorner(activeAnchor, fixedCorner, width, measured.height),
+    bounds: getAnchoredBoxFromCorner(activeAnchor, fixedCorner, width, height),
     fontSize,
   };
 }
@@ -440,10 +458,8 @@ function getNodeGuideBounds(
   const position = node.position();
   const scaleX = Math.abs(node.scaleX?.() ?? 1);
   const scaleY = Math.abs(node.scaleY?.() ?? 1);
-  const width =
-    node instanceof Konva.Group ? node.width() : (node.width?.() ?? fallbackWidth) * scaleX;
-  const height =
-    node instanceof Konva.Group ? node.height() : (node.height?.() ?? fallbackHeight) * scaleY;
+  const width = (node.width?.() ?? fallbackWidth) * scaleX;
+  const height = (node.height?.() ?? fallbackHeight) * scaleY;
 
   return {
     x: position.x,
@@ -493,6 +509,21 @@ function measureTextBox(element: CanvasElement, width: number, fontSize: number)
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(probe.height())),
   };
+}
+
+function measureSingleLineTextWidth(element: CanvasElement, text: string, fontSize: number) {
+  const probe = new Konva.Text({
+    text,
+    fontSize,
+    fontFamily: element.fontFamily || "sans-serif",
+    fontStyle: mapFontStyleToKonva(element.fontWeight, element.fontStyle),
+    lineHeight: element.lineHeight || 1.2,
+    letterSpacing: element.letterSpacing || 0,
+    wrap: "none",
+    padding: 0,
+  });
+
+  return Math.max(1, Math.round(probe.width()));
 }
 
 function getImageAsset(src: string) {
@@ -1089,16 +1120,44 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       textarea: HTMLTextAreaElement,
       textValue: string = textarea.value,
     ) => {
-      const constrainedWidth = Math.max(20, Math.round(editor.width));
       const canvasScale = Math.max(scale, 0.001);
-      const canvasWidth = Math.max(1, Math.round(constrainedWidth / canvasScale));
+      const baseCanvasWidth = Math.max(1, Math.round(Math.max(20, editor.width) / canvasScale));
+      const transformedText =
+        editor.textTransform === "uppercase" ? textValue.toUpperCase() : textValue;
+      const singleLine = !transformedText.includes("\n");
+      const intrinsicCanvasWidth = singleLine
+        ? measureSingleLineTextWidth(
+            {
+              id: editor.id,
+              type: "text",
+              x: 0,
+              y: 0,
+              width: baseCanvasWidth,
+              height: Math.max(1, Math.round(editor.height / canvasScale)),
+              content: transformedText || " ",
+              fontSize: editor.fontSize,
+              fontFamily: editor.fontFamily,
+              fontWeight: editor.fontWeight,
+              fontStyle: editor.fontStyle,
+              lineHeight: editor.lineHeight,
+              letterSpacing: editor.letterSpacing,
+              textAlign: editor.textAlign,
+              textTransform: editor.textTransform,
+            },
+            transformedText || " ",
+            editor.fontSize,
+          ) + 8
+        : baseCanvasWidth;
+      const nextCanvasWidth = singleLine
+        ? Math.max(24, intrinsicCanvasWidth)
+        : baseCanvasWidth;
       const measured = measureTextBox(
         {
           id: editor.id,
           type: "text",
           x: 0,
           y: 0,
-          width: canvasWidth,
+          width: nextCanvasWidth,
           height: Math.max(1, Math.round(editor.height / canvasScale)),
           content: textValue,
           fontSize: editor.fontSize,
@@ -1110,16 +1169,17 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           textAlign: editor.textAlign,
           textTransform: editor.textTransform,
         },
-        canvasWidth,
+        nextCanvasWidth,
         editor.fontSize,
       );
+      const nextWidth = Math.max(20, Math.round(nextCanvasWidth * canvasScale));
       const nextHeight = Math.max(20, Math.round(measured.height * canvasScale));
 
-      textarea.style.width = `${constrainedWidth}px`;
+      textarea.style.width = `${nextWidth}px`;
       textarea.style.height = `${nextHeight}px`;
 
       return {
-        width: constrainedWidth,
+        width: nextWidth,
         height: nextHeight,
       };
     },
@@ -1445,17 +1505,6 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
           e.cancelBubble = true;
 
-          if (element.type === "text" && shape instanceof Konva.Text) {
-            const isAlreadyOnlySelected =
-              selectedElementIdsRef.current.length === 1 &&
-              selectedElementIdsRef.current[0] === element.id;
-
-            if (isAlreadyOnlySelected) {
-              startInlineEditing(element, shape);
-              return;
-            }
-          }
-
           onSelectElement(element.id, Boolean((e.evt as MouseEvent)?.shiftKey));
         },
       );
@@ -1576,9 +1625,13 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         }
 
         if (session.originalElement.type === "image") {
-          previewBounds = rawBounds;
-          previewWidth = previewBounds.width;
-          previewHeight = previewBounds.height;
+          const pointer = getCanvasPointerPosition();
+          const imagePreview = pointer
+            ? getImageTransformPreviewBounds(session, pointer)
+            : getStableImageTransformBounds(session, rawBounds);
+          previewBounds = imagePreview;
+          previewWidth = imagePreview.width;
+          previewHeight = imagePreview.height;
         }
 
         drawTransformGhost(previewBounds);
@@ -1626,47 +1679,89 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
         const rawBounds = getNodeGuideBounds(shape, element.width, element.height);
         let finalBounds = rawBounds;
-        let nextWidth = rawBounds.width;
-        let nextHeight = rawBounds.height;
+        let nextWidth = Math.max(MIN_TRANSFORM_SIZE, Math.round(rawBounds.width));
+        let nextHeight = Math.max(MIN_TRANSFORM_SIZE, Math.round(rawBounds.height));
         let nextFontSize = element.fontSize;
-
-        if (!(shape instanceof Konva.Group)) {
-          shape.scaleX(1);
-          shape.scaleY(1);
-        }
 
         if (session?.activeAnchor && element.type === "text") {
           if (session.isCornerHandle) {
-            // Corner: scale fontSize by height ratio
-            const scaleFactor = rawBounds.height / Math.max(1, session.originalBounds.height);
-            nextFontSize = Math.max(8, Math.round((session.originalElement.fontSize || 24) * scaleFactor));
-            nextWidth = Math.max(40, Math.round(rawBounds.width));
-            const measured = measureTextBox(session.originalElement, nextWidth, nextFontSize);
-            nextWidth = measured.width;
-            nextHeight = measured.height;
-          } else if (
-            session.activeAnchor === "top-center" ||
-            session.activeAnchor === "bottom-center"
-          ) {
-            const scaleFactor = rawBounds.height / Math.max(1, session.originalBounds.height);
+            const scaleFactor = Math.max(
+              rawBounds.width / Math.max(1, session.originalBounds.width),
+              rawBounds.height / Math.max(1, session.originalBounds.height),
+            );
             nextFontSize = Math.max(8, Math.round((session.originalElement.fontSize || 24) * scaleFactor));
             nextWidth = Math.max(40, Math.round(session.originalElement.width * scaleFactor));
             const measured = measureTextBox(session.originalElement, nextWidth, nextFontSize);
             nextWidth = measured.width;
-            nextHeight = measured.height;
+            nextHeight = Math.max(
+              Math.round(session.originalElement.height * scaleFactor),
+              measured.height,
+            );
+            const fixedCorner = getOppositeCorner(session.originalBounds, session.activeAnchor);
+            finalBounds = getAnchoredBoxFromCorner(
+              session.activeAnchor,
+              fixedCorner,
+              nextWidth,
+              nextHeight,
+            );
+          } else if (
+            session.activeAnchor === "top-center" ||
+            session.activeAnchor === "bottom-center"
+          ) {
+            nextFontSize = session.originalElement.fontSize || 24;
+            nextWidth = session.originalElement.width;
+            const measured = measureTextBox(
+              session.originalElement,
+              nextWidth,
+              nextFontSize,
+            );
+            nextHeight = Math.max(Math.round(rawBounds.height), measured.height);
+            finalBounds = {
+              x: rawBounds.x,
+              y: rawBounds.y,
+              width: nextWidth,
+              height: nextHeight,
+            };
           } else {
             const affectsWidth = session.activeAnchor.includes("left") || session.activeAnchor.includes("right");
             nextWidth = affectsWidth ? Math.max(40, Math.round(rawBounds.width)) : session.originalElement.width;
             const measured = measureTextBox(session.originalElement, nextWidth, session.originalElement.fontSize || 24);
-            nextHeight = measured.height;
+            nextHeight = Math.max(session.originalElement.height, measured.height);
             nextFontSize = session.originalElement.fontSize || 24;
+            finalBounds = {
+              x: rawBounds.x,
+              y: rawBounds.y,
+              width: nextWidth,
+              height: nextHeight,
+            };
           }
         }
 
         if (session?.activeAnchor && element.type === "image") {
+          finalBounds = getStableImageTransformBounds(session, rawBounds);
+          nextWidth = Math.max(MIN_TRANSFORM_SIZE, Math.round(finalBounds.width));
+          nextHeight = Math.max(MIN_TRANSFORM_SIZE, Math.round(finalBounds.height));
+        }
+
+        if (session?.activeAnchor && element.type === "table") {
           finalBounds = rawBounds;
-          nextWidth = finalBounds.width;
-          nextHeight = finalBounds.height;
+          nextWidth = Math.max(MIN_TRANSFORM_SIZE, Math.round(finalBounds.width));
+          nextHeight = Math.max(MIN_TRANSFORM_SIZE, Math.round(finalBounds.height));
+
+          const baseFontSize = session.originalElement.fontSize || 14;
+          const widthScale = rawBounds.width / Math.max(1, session.originalBounds.width);
+          const heightScale = rawBounds.height / Math.max(1, session.originalBounds.height);
+
+          if (session.isCornerHandle) {
+            nextFontSize = Math.max(8, Math.round(baseFontSize * Math.min(widthScale, heightScale)));
+          } else if (
+            session.activeAnchor === "top-center" ||
+            session.activeAnchor === "bottom-center"
+          ) {
+            nextFontSize = Math.max(8, Math.round(baseFontSize * heightScale));
+          } else {
+            nextFontSize = baseFontSize;
+          }
         }
 
         const rawRight = finalBounds.x + finalBounds.width;
@@ -1699,16 +1794,24 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         }
 
         shape.position({ x: nextX, y: nextY });
-        if (shape instanceof Konva.Text || shape instanceof Konva.Image || shape instanceof Konva.Rect) {
+
+        if (
+          shape instanceof Konva.Text ||
+          shape instanceof Konva.Image ||
+          shape instanceof Konva.Rect ||
+          shape instanceof Konva.Group
+        ) {
           shape.width(nextWidth);
           shape.height(nextHeight);
         }
+
+        shape.scale({ x: 1, y: 1 });
+
         if (shape instanceof Konva.Image) {
-          shape.scale({ x: 1, y: 1 });
-          applyImageNodeCrop(shape, nextWidth, nextHeight);
-          layer.batchDraw();
+          applyMediaNodeCrop(shape, nextWidth, nextHeight);
         }
 
+        layer.batchDraw();
         clearAlignmentGuides();
         onClearPreviewElement?.(element.id);
 
@@ -1717,7 +1820,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           y: Math.round(nextY),
           width: Math.round(nextWidth),
           height: Math.round(nextHeight),
-          ...(element.type === "text" && nextFontSize ? { fontSize: nextFontSize } : {}),
+          ...((element.type === "text" || element.type === "table") && nextFontSize
+            ? { fontSize: nextFontSize }
+            : {}),
           rotation: Math.round(shape.rotation() || 0),
         });
 
@@ -1794,7 +1899,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     ]);
 
     const transformerBack = transformer.findOne(".back");
-    const transformerInlineEditEvent = `${stageActivateEvent}.inlineEdit`;
+    const transformerInlineEditEvent = `${stageDoubleActivateEvent}.inlineEdit`;
     transformerBack?.off(transformerInlineEditEvent);
 
     if (
@@ -2242,7 +2347,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       };
 
       hasManualMobileTransformRef.current = true;
+      stageRef.current?.stopDrag();
       event.preventDefault();
+      event.stopPropagation();
     },
     [getRelativeViewportPoint, isMobileViewport, mobilePan.x, mobilePan.y, zoom],
   );
@@ -2282,6 +2389,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         y: midpoint.y - pinchSession.anchorPoint.y * nextScale,
       };
 
+      stageRef.current?.stopDrag();
       syncMobileZoomTransform(nextZoom, nextPan, { manual: true });
       event.preventDefault();
       event.stopPropagation();
@@ -2293,8 +2401,10 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     (event: React.TouchEvent<HTMLDivElement>) => {
       if (!isMobileViewport) return;
 
-      if (event.touches.length < 2) {
+      if (pinchSessionRef.current && event.touches.length < 2) {
         pinchSessionRef.current = null;
+        event.preventDefault();
+        event.stopPropagation();
       }
     },
     [isMobileViewport],
@@ -2572,25 +2682,34 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
     };
 
     if (renderable.type === "text") {
+      const fontSize = renderable.fontSize || 24;
+      const singleLine = !textContent.includes("\n");
+      const intrinsicWidth = singleLine
+        ? measureSingleLineTextWidth(renderable, textContent || " ", fontSize)
+        : renderable.width;
+      const effectiveWidth = singleLine
+        ? Math.max(24, intrinsicWidth + 8, renderable.width || 0)
+        : renderable.width;
       const measured = measureTextBox(
         renderable,
-        renderable.width,
-        renderable.fontSize || 24,
+        effectiveWidth,
+        fontSize,
       );
+      const textNodeHeight = Math.max(renderable.height || 0, measured.height);
 
       return new Konva.Text({
         ...baseConfig,
         listening: true,
         name: "selectable-text",
-        width: renderable.width,
-        height: measured.height,
+        width: effectiveWidth,
+        height: textNodeHeight,
         text: textContent,
-        fontSize: renderable.fontSize || 24,
+        fontSize,
         fontFamily: renderable.fontFamily || "sans-serif",
         fontStyle: mapFontStyleToKonva(renderable.fontWeight, renderable.fontStyle),
         fill: renderable.color || "#000000",
         align: renderable.textAlign || "center",
-        verticalAlign: renderable.textVerticalAlign || "middle",
+        verticalAlign: renderable.textVerticalAlign || "top",
         lineHeight: renderable.lineHeight || 1.2,
         letterSpacing: renderable.letterSpacing || 0,
         textDecoration:
@@ -2600,7 +2719,7 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
         wrap: "word",
         hitFunc: (context, shape) => {
           context.beginPath();
-          context.rect(0, 0, renderable.width, measured.height);
+          context.rect(0, 0, effectiveWidth, textNodeHeight);
           context.closePath();
           context.fillStrokeShape(shape);
         },
@@ -2668,10 +2787,7 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       });
 
       const applyCrop = () => {
-        const crop = getCoverCrop(img, renderable.width, renderable.height);
-        if (crop) {
-          imageNode.crop(crop);
-        }
+        applyMediaNodeCrop(imageNode, renderable.width, renderable.height);
         imageNode.getLayer()?.batchDraw();
       };
 
@@ -2750,10 +2866,7 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       });
 
       const applyCrop = () => {
-        const crop = getVideoCoverCrop(video, renderable.width, renderable.height);
-        if (crop) {
-          videoNode.crop(crop);
-        }
+        applyMediaNodeCrop(videoNode, renderable.width, renderable.height);
         videoNode.getLayer()?.batchDraw();
       };
 

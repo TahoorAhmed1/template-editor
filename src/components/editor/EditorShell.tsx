@@ -7,7 +7,7 @@ import { TimelineBar } from "./TimelineBar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileBottomDock } from "./MobileBottomDock";
 import { LayersPanel } from "./LayersPanel";
-import { MobileLayerSheet } from "./MobileLayerSheet";
+import { MobileLayerSheet, type MobileLayerSheetSection } from "./MobileLayerSheet";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 
 export type ToolType =
@@ -411,7 +411,9 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const pendingTextEditId = useTextEditStore((state) => state.requestedElementId);
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const clearTextEditRequest = useTextEditStore((state) => state.clearTextEditRequest);
-
+const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
+  const [mobileLayerSheetSection, setMobileLayerSheetSection] = React.useState<MobileLayerSheetSection>("content");
+  const [mobileLayerSheetLocked, setMobileLayerSheetLocked] = React.useState(false);
   const [elements, setElements] = React.useState<CanvasElement[]>(() => [
     // normalizeLayer(initialTitleElementRef.current!, 0),
   ]);
@@ -508,9 +510,13 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
 
   const handleToolClick = (tool: ToolType) => {
   if (isMobile) {
+    setMobileLayerSheetOpen(false);
+    setMobileLayerSheetLocked(false);
+
     if (tool === "draw") {
       setSelectedLayerId(null);
     }
+
     setActiveTool(tool);
     setRequestedMobileTab("add");
     return;
@@ -891,18 +897,29 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   );
 
   const handleSelectElement = useCallback(
-  (id: string | null, shiftKey: boolean = false) => {
+  (id: string | null) => {
     editorRootRef.current?.focus();
 
     if (!id) {
       setSelectedLayerId(null);
+      setMobileLayerSheetOpen(false);
+      setMobileLayerSheetLocked(false);
       return;
     }
 
     setSelectedLayerId(id);
+
+    // Mobile: select only, do not auto-open inspector sheet
+    if (isMobile) {
+      setMobileLayerSheetOpen(false);
+      setMobileLayerSheetLocked(false);
+    }
   },
-  []
+  [isMobile],
 );
+
+
+
 
   const focusEditorRootFromTarget = React.useCallback((target: EventTarget | null) => {
       const resolvedTarget = target;
@@ -1088,6 +1105,28 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   moveSelectedElementsBy,
   mode,
 ]);
+
+  React.useEffect(() => {
+    const handleMobileSheetEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{ action?: string; section?: MobileLayerSheetSection }>;
+      const action = customEvent.detail?.action;
+      const section = customEvent.detail?.section;
+
+      if (action === "open" && selectedLayerId) {
+        setMobileLayerSheetSection(section ?? "content");
+        setMobileLayerSheetLocked(Boolean(section));
+        setMobileLayerSheetOpen(true);
+      }
+
+      if (action === "close") {
+        setMobileLayerSheetOpen(false);
+        setMobileLayerSheetLocked(false);
+      }
+    };
+
+    window.addEventListener("editor:mobile-layer-sheet", handleMobileSheetEvent as EventListener);
+    return () => window.removeEventListener("editor:mobile-layer-sheet", handleMobileSheetEvent as EventListener);
+  }, [selectedLayerId]);
 
   React.useEffect(() => {
     const handleToolAction = (event: Event) => {
@@ -1378,7 +1417,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
         </div>
 
         <MobileBottomDock
-          selectedElement={null}
+          selectedElement={selectedElementPreview}
           mode={mode}
           canvasSize={canvasSize}
           canvasBackground={canvasBackground}
@@ -1443,12 +1482,18 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
       )}
 
       <MobileLayerSheet
-        layer={selectedElement}
-        onClose={() => setSelectedLayerId(null)}
+        layer={mobileLayerSheetOpen ? selectedElementPreview : null}
+        section={mobileLayerSheetSection}
+        onSectionChange={setMobileLayerSheetSection}
+        onClose={() => {
+          setMobileLayerSheetOpen(false);
+          setMobileLayerSheetLocked(false);
+        }}
         onUpdateLayer={updateElement}
         onDeleteLayer={deleteElement}
         onDuplicateLayer={duplicateElement}
         onMoveLayer={moveElementLayer}
+        hideSectionTabs={mobileLayerSheetLocked}
       />
     </div>
   );

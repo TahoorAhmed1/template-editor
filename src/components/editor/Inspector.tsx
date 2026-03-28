@@ -516,14 +516,6 @@ interface ElementInspectorProps {
   onStartTextEditing?: (id: string) => void;
 }
 
-const DEFAULT_ANIMATION_STATE = {
-  opacity: 1,
-  x: 0,
-  y: 0,
-  scale: 1,
-  rotation: 0,
-};
-
 export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer, onStartTextEditing }) => {
   if (element.type === "text") {
     return (
@@ -556,42 +548,6 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
       />
     );
   }
-
-  const activePhase = element.animationProps?.activePhase ?? "end";
-  const activeAnimation = element.animationProps?.[activePhase] ?? DEFAULT_ANIMATION_STATE;
-
-  const updateAnimationPhase = (phase: "start" | "end") => {
-    onUpdate({
-      animationProps: {
-        activePhase: phase,
-        start: element.animationProps?.start ?? { ...DEFAULT_ANIMATION_STATE, opacity: 0, y: 20 },
-        end: element.animationProps?.end ?? DEFAULT_ANIMATION_STATE,
-      },
-    });
-  };
-
-  const updateAnimationValue = (
-    key: "opacity" | "x" | "y" | "scale" | "rotation",
-    value: number,
-  ) => {
-    onUpdate({
-      animationProps: {
-        activePhase,
-        start: {
-          ...DEFAULT_ANIMATION_STATE,
-          opacity: 0,
-          y: 20,
-          ...(element.animationProps?.start ?? {}),
-          ...(activePhase === "start" ? { [key]: value } : {}),
-        },
-        end: {
-          ...DEFAULT_ANIMATION_STATE,
-          ...(element.animationProps?.end ?? {}),
-          ...(activePhase === "end" ? { [key]: value } : {}),
-        },
-      },
-    });
-  };
 
   return (
   <div className="space-y-5 p-4">
@@ -848,135 +804,6 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
         </div>
       </Section>
 
-      <Section title="Motion">
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            {(["start", "end"] as const).map((phase) => (
-              <button
-                key={phase}
-                type="button"
-                onClick={() => updateAnimationPhase(phase)}
-                className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize transition ${
-                  activePhase === phase
-                    ? "border-[#7650e3] bg-[#7650e3]/10 text-[#7650e3]"
-                    : "border-editor-inspector-border bg-accent/30 text-muted-foreground"
-                }`}
-              >
-                {phase}
-              </button>
-            ))}
-          </div>
-
-          <Row label="Fade">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={activeAnimation.opacity}
-                onChange={(e) => updateAnimationValue("opacity", Number(e.target.value))}
-                className="w-16 h-1 accent-primary"
-              />
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.05"
-                value={activeAnimation.opacity}
-                onChange={(e) => updateAnimationValue("opacity", Number(e.target.value))}
-                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-              />
-            </div>
-          </Row>
-          <Row label="Offset X">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="range"
-                min="-400"
-                max="400"
-                step="1"
-                value={activeAnimation.x}
-                onChange={(e) => updateAnimationValue("x", Number(e.target.value))}
-                className="w-16 h-1 accent-primary"
-              />
-              <input
-                type="number"
-                min="-400"
-                max="400"
-                value={activeAnimation.x}
-                onChange={(e) => updateAnimationValue("x", Number(e.target.value))}
-                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-              />
-            </div>
-          </Row>
-          <Row label="Offset Y">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="range"
-                min="-400"
-                max="400"
-                step="1"
-                value={activeAnimation.y}
-                onChange={(e) => updateAnimationValue("y", Number(e.target.value))}
-                className="w-16 h-1 accent-primary"
-              />
-              <input
-                type="number"
-                min="-400"
-                max="400"
-                value={activeAnimation.y}
-                onChange={(e) => updateAnimationValue("y", Number(e.target.value))}
-                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-              />
-            </div>
-          </Row>
-          <Row label="Scale">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="range"
-                min="0.25"
-                max="3"
-                step="0.05"
-                value={activeAnimation.scale}
-                onChange={(e) => updateAnimationValue("scale", Number(e.target.value))}
-                className="w-16 h-1 accent-primary"
-              />
-              <input
-                type="number"
-                min="0.25"
-                max="3"
-                step="0.05"
-                value={activeAnimation.scale}
-                onChange={(e) => updateAnimationValue("scale", Number(e.target.value))}
-                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-              />
-            </div>
-          </Row>
-
-          <Row label="Rotation">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="range"
-                min="-360"
-                max="360"
-                step="1"
-                value={activeAnimation.rotation}
-                onChange={(e) => updateAnimationValue("rotation", Number(e.target.value))}
-                className="w-16 h-1 accent-primary"
-              />
-              <input
-                type="number"
-                min="-360"
-                max="360"
-                value={activeAnimation.rotation}
-                onChange={(e) => updateAnimationValue("rotation", Number(e.target.value))}
-                className="w-12 h-7 px-1 text-[12px] bg-accent/50 border border-editor-inspector-border rounded-md text-foreground text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50"
-              />
-            </div>
-          </Row>
-        </div>
-    </Section>
   </div>
   );
 };
