@@ -101,6 +101,7 @@ const MAX_MOBILE_ZOOM_PERCENT = 500;
 const MOBILE_VIEWPORT_GUTTER = 12;
 const MIN_TRANSFORM_SIZE = 20;
 const PREVIEW_SYNC_INTERVAL_MS = 20;
+const INLINE_EDITOR_WIDTH_OFFSET = 50;
 const DEFAULT_TRANSFORM_ANCHORS = [
   "top-left",
   "top-center",
@@ -493,6 +494,56 @@ function isCornerAnchor(anchor: string | null) {
   return anchor === "top-left" || anchor === "top-right" || anchor === "bottom-left" || anchor === "bottom-right";
 }
 
+function getEditableTextContent(element: HTMLDivElement | null | undefined) {
+  if (!element) {
+    return "";
+  }
+
+  return element.innerText
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u200B/g, "");
+}
+
+function moveCaretToEnd(element: HTMLDivElement) {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertEditableLineBreak() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+
+  const fragment = document.createDocumentFragment();
+  const br = document.createElement("br");
+  const marker = document.createTextNode("\u200B");
+  fragment.append(br, marker);
+  range.insertNode(fragment);
+
+  range.setStartAfter(marker);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
+function shouldShowTransformGhost(element: CanvasElement) {
+  return element.type !== "text";
+}
+
 function measureTextBox(element: CanvasElement, width: number, fontSize: number) {
   const probe = new Konva.Text({
     text:
@@ -722,7 +773,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const elementsRef = useRef(elements);
   const selectedElementIdsRef = useRef(selectedElementIds);
-  const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const textInputRef = useRef<HTMLDivElement>(null);
   const isDrawingRef = useRef(false);
   const lastDrawPointRef = useRef<{ x: number; y: number } | null>(null);
   const hasDrawingRef = useRef(false);
@@ -1090,7 +1141,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       const pos = node.absolutePosition();
       const width = Math.max(
         20,
-        node.width() * Math.abs(node.scaleX()) * scale,
+        node.width() * Math.abs(node.scaleX()) * scale + INLINE_EDITOR_WIDTH_OFFSET,
       );
       const height = Math.max(
         20,
@@ -1122,10 +1173,19 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const syncInlineEditorSize = useCallback(
     (
       editor: InlineEditorState,
-      textarea: HTMLTextAreaElement,
-      textValue: string = textarea.value,
+      editable: HTMLDivElement,
+      textValue: string = getEditableTextContent(editable),
     ) => {
       const canvasScale = Math.max(scale, 0.001);
+      const maxDisplayWidth = Math.max(
+        20,
+        Math.round(canvasSize.width * scale - editor.x),
+      );
+      const maxCanvasWidth = Math.max(24, Math.round(maxDisplayWidth / canvasScale));
+      const widthOffsetInCanvasUnits = Math.max(
+        1,
+        Math.round(INLINE_EDITOR_WIDTH_OFFSET / canvasScale),
+      );
       const baseCanvasWidth = Math.max(1, Math.round(Math.max(20, editor.width) / canvasScale));
       const transformedText =
         editor.textTransform === "uppercase" ? textValue.toUpperCase() : textValue;
@@ -1151,11 +1211,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
             },
             transformedText || " ",
             editor.fontSize,
-          ) + 8
+          ) + 8 + widthOffsetInCanvasUnits
         : baseCanvasWidth;
       const nextCanvasWidth = singleLine
-        ? Math.max(24, intrinsicCanvasWidth)
-        : baseCanvasWidth;
+        ? Math.max(24, Math.min(intrinsicCanvasWidth, maxCanvasWidth))
+        : Math.min(baseCanvasWidth, maxCanvasWidth);
       const measured = measureTextBox(
         {
           id: editor.id,
@@ -1180,15 +1240,15 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       const nextWidth = Math.max(20, Math.round(nextCanvasWidth * canvasScale));
       const nextHeight = Math.max(20, Math.round(measured.height * canvasScale));
 
-      textarea.style.width = `${nextWidth}px`;
-      textarea.style.height = `${nextHeight}px`;
+      editable.style.width = `${nextWidth}px`;
+      editable.style.height = `${nextHeight}px`;
 
       return {
         width: nextWidth,
         height: nextHeight,
       };
     },
-    [scale],
+    [canvasSize.width, scale],
   );
 
   const startInlineEditing = useCallback(
@@ -1238,11 +1298,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       isClosingRef.current = true;
       inlineEditorRef.current = null;
 
-      const textarea = textInputRef.current;
-      const nextText = textarea?.value ?? editingTextRef.current;
+      const editable = textInputRef.current;
+      const nextText = getEditableTextContent(editable) || editingTextRef.current;
       const nextSize =
-        textarea != null
-          ? syncInlineEditorSize(currentInlineEditor, textarea)
+        editable != null
+          ? syncInlineEditorSize(currentInlineEditor, editable)
           : {
               width: currentInlineEditor.width,
               height: currentInlineEditor.height,
@@ -1599,7 +1659,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
         lastPreviewSyncAtRef.current = 0;
         transformerInstance?.keepRatio(isCornerHandle);
-        drawTransformGhost(getNodeGuideBounds(shape, element.width, element.height));
+        if (shouldShowTransformGhost(element)) {
+          drawTransformGhost(getNodeGuideBounds(shape, element.width, element.height));
+        } else {
+          clearAlignmentGuides();
+        }
         onPreviewElement?.(element.id, {
           x: element.x,
           y: element.y,
@@ -1644,7 +1708,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           previewHeight = imagePreview.height;
         }
 
-        drawTransformGhost(previewBounds);
+        if (shouldShowTransformGhost(session.originalElement)) {
+          drawTransformGhost(previewBounds);
+        } else {
+          clearAlignmentGuides();
+        }
 
         const rawRight = previewBounds.x + previewBounds.width;
         const rawBottom = previewBounds.y + previewBounds.height;
@@ -2014,48 +2082,68 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     gridLayer.draw();
   }, [zoom]);
 
+  const inlineEditorId = inlineEditor?.id ?? null;
+
   useEffect(() => {
-    if (!inlineEditor || !textInputRef.current) return;
+    const currentEditor = inlineEditorRef.current;
+    if (!inlineEditorId || !currentEditor || !textInputRef.current) return;
 
-    const textarea = textInputRef.current;
-    textarea.focus();
+    const editable = textInputRef.current;
+    const nextText = editingTextRef.current;
 
-    const len = textarea.value.length;
-    textarea.setSelectionRange(len, len);
+    if (getEditableTextContent(editable) !== nextText) {
+      editable.textContent = nextText;
+    }
 
-    const nextSize = syncInlineEditorSize(inlineEditor, textarea);
+    editable.focus();
+    moveCaretToEnd(editable);
+
+    editable.style.width = `${currentEditor.width}px`;
+    editable.style.height = `${currentEditor.height}px`;
+  }, [inlineEditorId, syncInlineEditorSize]);
+
+  useEffect(() => {
+    const currentEditor = inlineEditorRef.current;
+    if (!inlineEditorId || !currentEditor || !textInputRef.current) return;
+
+    const editable = textInputRef.current;
+    const nextText = getEditableTextContent(editable) || editingTextRef.current;
+
+    const nextSize = syncInlineEditorSize(currentEditor, editable, nextText);
     if (
-      nextSize.width !== inlineEditor.width ||
-      nextSize.height !== inlineEditor.height
+      nextSize.width !== currentEditor.width ||
+      nextSize.height !== currentEditor.height
     ) {
       const updated = {
-        ...inlineEditor,
+        ...currentEditor,
         width: nextSize.width,
         height: nextSize.height,
       };
       inlineEditorRef.current = updated;
       setInlineEditor(updated);
     }
-  }, [inlineEditor, syncInlineEditorSize]);
+  }, [scale, inlineEditorId, syncInlineEditorSize]);
 
   useEffect(() => {
-    if (!inlineEditor || !textInputRef.current) return;
+    const currentEditor = inlineEditorRef.current;
+    if (!inlineEditorId || !currentEditor || !textInputRef.current) return;
 
-    const textarea = textInputRef.current;
-    const nextSize = syncInlineEditorSize(inlineEditor, textarea);
+    const editable = textInputRef.current;
+    const liveText = getEditableTextContent(editable);
+    const nextSize = syncInlineEditorSize(currentEditor, editable, liveText);
     if (
-      nextSize.width !== inlineEditor.width ||
-      nextSize.height !== inlineEditor.height
+      nextSize.width !== currentEditor.width ||
+      nextSize.height !== currentEditor.height
     ) {
       const updated = {
-        ...inlineEditor,
+        ...currentEditor,
         width: nextSize.width,
         height: nextSize.height,
       };
       inlineEditorRef.current = updated;
       setInlineEditor(updated);
     }
-  }, [editingText, inlineEditor, syncInlineEditorSize]);
+  }, [editingText, inlineEditorId, syncInlineEditorSize]);
 
   useEffect(() => {
     const resolvedAutoEditElementId = requestedTextEditId ?? autoEditElementId;
@@ -2080,8 +2168,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   ]);
 
   const handleEditingChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setEditingText(e.target.value);
+    (e: React.FormEvent<HTMLDivElement>) => {
+      setEditingText(getEditableTextContent(e.currentTarget));
     },
     [],
   );
@@ -2095,8 +2183,19 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   }, []);
 
   const handleEditingKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
       e.stopPropagation();
+
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        if (insertEditableLineBreak()) {
+          const editable = e.currentTarget;
+          requestAnimationFrame(() => {
+            setEditingText(getEditableTextContent(editable));
+          });
+        }
+        return;
+      }
 
       if (e.key === "Escape") {
         e.preventDefault();
@@ -2538,21 +2637,24 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       />
 
       {inlineEditor && (
-        <textarea
+        <div
           ref={textInputRef}
-          value={editingText}
-          onChange={handleEditingChange}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleEditingChange}
           onBlur={handleEditingBlur}
           onKeyDown={handleEditingKeyDown}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           spellCheck={false}
-          className="absolute resize-none overflow-hidden focus:outline-none"
+          className="absolute overflow-hidden focus:outline-none"
           style={{
             left: inlineEditor.x,
             top: inlineEditor.y,
             width: inlineEditor.width,
             minHeight: inlineEditor.height,
+            display: "block",
+            boxSizing: "border-box",
             fontSize: `${inlineEditor.fontSize * scale}px`,
             fontFamily: inlineEditor.fontFamily,
             fontWeight: inlineEditor.fontWeight,
