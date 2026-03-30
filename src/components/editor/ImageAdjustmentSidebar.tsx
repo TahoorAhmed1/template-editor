@@ -28,7 +28,7 @@ interface ImageAdjustmentSidebarProps {
 
 const defaultEffects: LayerEffectProps = {
   preset: "none",
-  glowColor: "#38bdf8",
+  glowColor: "#7650e3",
   glowIntensity: 18,
   shadowColor: "#0f172a",
   shadowBlur: 0,

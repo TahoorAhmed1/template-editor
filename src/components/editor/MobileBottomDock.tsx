@@ -208,7 +208,7 @@ const compactSliderClass =
   "w-full max-w-[168px] cursor-pointer appearance-none bg-transparent py-2 accent-[#7650e3] touch-pan-x [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-[#7650e3] [&::-moz-range-thumb]:shadow-[0_2px_8px_rgba(118,80,227,0.35)] [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#d7deea] [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#d7deea] [&::-webkit-slider-thumb]:mt-[-5px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[#7650e3] [&::-webkit-slider-thumb]:shadow-[0_2px_8px_rgba(118,80,227,0.35)]";
 const defaultEffectProps: LayerEffectProps = {
   preset: "none",
-  glowColor: "#38bdf8",
+  glowColor: "#7650e3",
   glowIntensity: 18,
   shadowColor: "#0f172a",
   shadowBlur: 0,

@@ -3070,7 +3070,7 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
       const usesGlow = effect?.preset === "neon-glow" || effect?.preset === "pulse";
       const usesShadow = usesGlow || effect?.preset === "drop-shadow" || (effect?.shadowBlur ?? 0) > 0;
       const shadowColor = usesGlow
-        ? effect?.glowColor || "#38bdf8"
+        ? effect?.glowColor || "#7650e3"
         : effect?.shadowColor || "#0f172a";
       const shadowBlur = usesGlow
         ? Math.max(4, effect?.glowIntensity ?? 18)

@@ -46,7 +46,7 @@ const FONT_OPTIONS = [
 
 const defaultEffects: LayerEffectProps = {
   preset: "none",
-  glowColor: "#38bdf8",
+  glowColor: "#7650e3",
   glowIntensity: 18,
   shadowColor: "#0f172a",
   shadowBlur: 0,
@@ -277,7 +277,7 @@ const ShadowControl: React.FC<{
         step={step}
         value={value}
         onChange={(event) => apply(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#e5e7eb] accent-[#38bdf8]"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#e5e7eb] accent-[#7650e3]"
       />
     </div>
   );
