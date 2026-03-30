@@ -4,6 +4,7 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  Check,
   ChevronDown,
   Copy,
   Link2,
@@ -60,10 +61,45 @@ const defaultEffects: LayerEffectProps = {
   pulseSpeed: 1,
 };
 
+type ShadowOptionValue = "none" | "light-shadow" | "strong-shadow" | "custom-shadow";
+
 const SHADOW_OPTIONS = [
   { label: "None", value: "none" as const },
-  { label: "Neon Glow", value: "neon-glow" as const },
+  { label: "Light Shadow", value: "light-shadow" as const },
+  { label: "Strong Shadow", value: "strong-shadow" as const },
+  { label: "Custom Shadow", value: "custom-shadow" as const },
 ];
+
+const SHADOW_PRESET_CONFIG: Record<Exclude<ShadowOptionValue, "none" | "custom-shadow">, {
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  distance: number;
+  angle: number;
+}> = {
+  "light-shadow": {
+    shadowColor: "#8f8f8f",
+    shadowOpacity: 0.28,
+    shadowBlur: 8,
+    distance: 4,
+    angle: 90,
+  },
+  "strong-shadow": {
+    shadowColor: "#7a7a7a",
+    shadowOpacity: 0.5,
+    shadowBlur: 16,
+    distance: 8,
+    angle: 90,
+  },
+};
+
+const CUSTOM_SHADOW_DEFAULTS = {
+  shadowColor: "#8d8d8d",
+  shadowOpacity: 0.5,
+  shadowBlur: 1,
+  distance: 4,
+  angle: 45,
+};
 
 const ROW_LABEL = "text-[11px] font-medium text-[#6b7280]";
 const DIVIDER = "border-t border-[#e5e7eb] pt-4";
@@ -78,6 +114,64 @@ const normalizeEffectProps = (selectedText: CanvasElement): LayerEffectProps => 
   ...defaultEffects,
   ...(selectedText.effectProps ?? {}),
 });
+
+const roundToPrecision = (value: number, precision = 100) =>
+  Math.round(value * precision) / precision;
+
+const getShadowDistance = (effect: LayerEffectProps) =>
+  Math.round(Math.sqrt((effect.shadowOffsetX ?? 0) ** 2 + (effect.shadowOffsetY ?? 0) ** 2));
+
+const getShadowAngle = (effect: LayerEffectProps) => {
+  if ((effect.shadowOffsetX ?? 0) === 0 && (effect.shadowOffsetY ?? 0) === 0) {
+    return CUSTOM_SHADOW_DEFAULTS.angle;
+  }
+
+  const angle = (Math.atan2(effect.shadowOffsetY ?? 0, effect.shadowOffsetX ?? 0) * 180) / Math.PI;
+  return Math.round((angle + 360) % 360);
+};
+
+const getShadowOffsets = (distance: number, angle: number) => {
+  const radians = (angle * Math.PI) / 180;
+  return {
+    shadowOffsetX: roundToPrecision(Math.cos(radians) * distance),
+    shadowOffsetY: roundToPrecision(Math.sin(radians) * distance),
+  };
+};
+
+const getShadowOptionValue = (effect: LayerEffectProps): ShadowOptionValue => {
+  const distance = getShadowDistance(effect);
+  const isShadowActive =
+    effect.preset === "drop-shadow" ||
+    effect.shadowBlur > 0 ||
+    distance > 0 ||
+    effect.shadowOpacity > 0;
+
+  if (!isShadowActive || effect.preset === "none" || effect.preset === "neon-glow") {
+    return "none";
+  }
+
+  const matchesLight =
+    Math.abs(effect.shadowBlur - SHADOW_PRESET_CONFIG["light-shadow"].shadowBlur) <= 1 &&
+    Math.abs(effect.shadowOpacity - SHADOW_PRESET_CONFIG["light-shadow"].shadowOpacity) <= 0.03 &&
+    Math.abs(distance - SHADOW_PRESET_CONFIG["light-shadow"].distance) <= 1 &&
+    Math.abs(effect.shadowOffsetX) <= 0.5;
+
+  if (matchesLight) {
+    return "light-shadow";
+  }
+
+  const matchesStrong =
+    Math.abs(effect.shadowBlur - SHADOW_PRESET_CONFIG["strong-shadow"].shadowBlur) <= 1 &&
+    Math.abs(effect.shadowOpacity - SHADOW_PRESET_CONFIG["strong-shadow"].shadowOpacity) <= 0.03 &&
+    Math.abs(distance - SHADOW_PRESET_CONFIG["strong-shadow"].distance) <= 1 &&
+    Math.abs(effect.shadowOffsetX) <= 0.5;
+
+  if (matchesStrong) {
+    return "strong-shadow";
+  }
+
+  return "custom-shadow";
+};
 
 const PrecisionControl: React.FC<{
   title: string;
@@ -131,6 +225,60 @@ const PrecisionControl: React.FC<{
           className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#f3efff] accent-[#7650e3]"
         />
       </div>
+    </div>
+  );
+};
+
+const ShadowControl: React.FC<{
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}> = ({ label, value, min, max, step, onChange }) => {
+  const apply = (next: number) => onChange(clamp(Number.isFinite(next) ? next : min, min, max));
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-[72px] whitespace-nowrap text-[12px] text-[#6b7280]">{label}</div>
+        <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-[3px] border border-[#d7dce3] bg-white">
+          <button
+            type="button"
+            onClick={() => apply(value - step)}
+            className="flex h-8 w-8 items-center justify-center text-[#6b7280] transition hover:bg-[#f3f5f8]"
+          >
+            <Minus size={13} />
+          </button>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(event) => apply(Number(event.target.value))}
+            className="h-8 w-[46px] border-x border-[#d7dce3] bg-white px-1 text-center text-[12px] font-medium text-[#1f2937] outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => apply(value + step)}
+            className="flex h-8 w-8 items-center justify-center text-[#6b7280] transition hover:bg-[#f3f5f8]"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => apply(Number(event.target.value))}
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#e5e7eb] accent-[#38bdf8]"
+      />
     </div>
   );
 };
@@ -226,17 +374,21 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [fontSearch, setFontSearch] = React.useState("");
   const [fontMenuOpen, setFontMenuOpen] = React.useState(false);
+  const [shadowMenuOpen, setShadowMenuOpen] = React.useState(false);
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const isLocked = Boolean(selectedText.locked);
   const effect = normalizeEffectProps(selectedText);
   const lineHeightUi = Math.round((selectedText.lineHeight ?? 1.2) * 100);
-  const shadowMode =
-    effect.preset === "drop-shadow" || effect.preset === "neon-glow" || effect.preset === "pulse"
-      ? effect.preset
-      : "none";
+  const shadowMode = getShadowOptionValue(effect);
+  const shadowDistance = getShadowDistance(effect);
+  const shadowAngle = getShadowAngle(effect);
 
   React.useEffect(() => {
     setActivePanel("main");
+  }, [selectedText.id]);
+
+  React.useEffect(() => {
+    setShadowMenuOpen(false);
   }, [selectedText.id]);
 
   const filteredFonts = React.useMemo(
@@ -261,6 +413,43 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
         ...effect,
         ...updates,
       },
+    });
+  };
+
+  const applyShadowOption = (option: ShadowOptionValue) => {
+    setShadowMenuOpen(false);
+
+    if (option === "none") {
+      updateEffect({
+        preset: "none",
+        shadowBlur: 0,
+        shadowOpacity: 0,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+      });
+      return;
+    }
+
+    if (option === "custom-shadow") {
+      const nextDistance = shadowDistance > 0 ? shadowDistance : CUSTOM_SHADOW_DEFAULTS.distance;
+      const nextAngle = shadowDistance > 0 ? shadowAngle : CUSTOM_SHADOW_DEFAULTS.angle;
+      updateEffect({
+        preset: "drop-shadow",
+        shadowColor: effect.shadowColor || CUSTOM_SHADOW_DEFAULTS.shadowColor,
+        shadowOpacity: effect.shadowOpacity > 0 ? effect.shadowOpacity : CUSTOM_SHADOW_DEFAULTS.shadowOpacity,
+        shadowBlur: Math.max(1, effect.shadowBlur || CUSTOM_SHADOW_DEFAULTS.shadowBlur),
+        ...getShadowOffsets(nextDistance, nextAngle),
+      });
+      return;
+    }
+
+    const preset = SHADOW_PRESET_CONFIG[option];
+    updateEffect({
+      preset: "drop-shadow",
+      shadowColor: preset.shadowColor,
+      shadowOpacity: preset.shadowOpacity,
+      shadowBlur: preset.shadowBlur,
+      ...getShadowOffsets(preset.distance, preset.angle),
     });
   };
 
@@ -622,39 +811,139 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           <div className="space-y-2 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className={ROW_LABEL}>Shadow</div>
-              <div className="relative w-[128px] shrink-0">
-                <select
-                  value={shadowMode}
-                  onChange={(event) => {
-                    const value = event.target.value as LayerEffectProps["preset"];
-
-                    if (value === "none") {
-                      updateEffect({ preset: "none", shadowBlur: 0 });
-                      return;
-                    }
-
-                    updateEffect({
-                      preset: value,
-                      shadowBlur:
-                        value === "drop-shadow"
-                          ? Math.max(effect.shadowBlur, 18)
-                          : effect.shadowBlur,
-                    });
-                  }}
-                  className="h-9 w-full appearance-none rounded-[3px] border border-[#d7dce3] bg-white pl-3 pr-8 text-[12px] text-[#2f3742] outline-none"
+              <div className="relative w-[140px] shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShadowMenuOpen((open) => !open)}
+                  className="flex h-9 w-full items-center justify-between rounded-[3px] border border-[#d7dce3] bg-white px-3 text-[12px] text-[#2f3742] outline-none"
                 >
-                  {SHADOW_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={13}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8a94a3]"
-                />
+                  <span className="truncate whitespace-nowrap pr-2 text-left">{SHADOW_OPTIONS.find((option) => option.value === shadowMode)?.label ?? "None"}</span>
+                  <ChevronDown size={13} className={`text-[#8a94a3] transition ${shadowMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+                {shadowMenuOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 rounded-[14px] border border-[#d7dce3] bg-white p-2 shadow-[0_18px_38px_rgba(15,23,42,0.12)]">
+                    {SHADOW_OPTIONS.map((option) => {
+                      const isSelected = option.value === shadowMode;
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => applyShadowOption(option.value)}
+                          className={`flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-left text-[12px] transition ${
+                            isSelected
+                              ? "bg-[#eaf6fd] text-[#0b5d8d]"
+                              : "text-[#2f3742] hover:bg-[#f7f9fb]"
+                          }`}
+                        >
+                          <span className="whitespace-nowrap">{option.label}</span>
+                          {isSelected ? <Check size={14} /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             </div>
+
+            {shadowMode !== "none" ? (
+              <div className="space-y-4 rounded-[3px] border border-[#eef1f5] bg-[#fafbfd] px-3 py-3">
+                {shadowMode === "custom-shadow" ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-[72px] whitespace-nowrap text-[12px] text-[#6b7280]">Color</div>
+                      <label className="flex h-8 w-12 cursor-pointer items-center justify-center rounded-[3px] border border-[#d7dce3] bg-white p-1">
+                        <input
+                          type="color"
+                          value={effect.shadowColor || CUSTOM_SHADOW_DEFAULTS.shadowColor}
+                          onChange={(event) =>
+                            updateEffect({
+                              preset: "drop-shadow",
+                              shadowColor: event.target.value,
+                            })
+                          }
+                          className="h-6 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+
+                    <ShadowControl
+                      label="Opacity"
+                      value={Math.round((effect.shadowOpacity || 0) * 100)}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={(value) =>
+                        updateEffect({
+                          preset: "drop-shadow",
+                          shadowOpacity: value / 100,
+                        })
+                      }
+                    />
+
+                    <ShadowControl
+                      label="Distance"
+                      value={shadowDistance}
+                      min={0}
+                      max={40}
+                      step={1}
+                      onChange={(value) =>
+                        updateEffect({
+                          preset: "drop-shadow",
+                          ...getShadowOffsets(value, shadowAngle),
+                        })
+                      }
+                    />
+
+                    <ShadowControl
+                      label="Angle"
+                      value={shadowAngle}
+                      min={0}
+                      max={360}
+                      step={1}
+                      onChange={(value) =>
+                        updateEffect({
+                          preset: "drop-shadow",
+                          ...getShadowOffsets(shadowDistance, value),
+                        })
+                      }
+                    />
+
+                    <ShadowControl
+                      label="Blur"
+                      value={Math.round(effect.shadowBlur || 0)}
+                      min={0}
+                      max={40}
+                      step={1}
+                      onChange={(value) =>
+                        updateEffect({
+                          preset: "drop-shadow",
+                          shadowBlur: value,
+                        })
+                      }
+                    />
+                  </>
+                ) : (
+                  <ShadowControl
+                    label="Distance"
+                    value={shadowDistance}
+                    min={0}
+                    max={40}
+                    step={1}
+                    onChange={(value) => {
+                      const preset = SHADOW_PRESET_CONFIG[shadowMode];
+                      updateEffect({
+                        preset: "drop-shadow",
+                        shadowColor: preset.shadowColor,
+                        shadowOpacity: preset.shadowOpacity,
+                        shadowBlur: preset.shadowBlur,
+                        ...getShadowOffsets(value, preset.angle),
+                      });
+                    }}
+                  />
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </Section>
