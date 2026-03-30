@@ -93,56 +93,132 @@ export const BackgroundFlyout: React.FC<{
   onBackgroundChange: (bg: string) => void;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
 }> = ({ onBackgroundChange, onAddElement }) => {
-  const stockBackground = "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?w=1200&h=1600&fit=crop";
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const [backgroundUploads, setBackgroundUploads] = React.useState<Array<{ src: string }>>(
+    []
+  );
+
+  const handleBackgroundFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          setBackgroundUploads((prev) => [{ src: dataUrl }, ...prev]);
+
+          const img = new window.Image();
+          img.onload = () => {
+            // Add as a full-size background image element
+            onAddElement({
+              type: "image",
+              x: 0,
+              y: 0,
+              width: img.width,
+              height: img.height,
+              src: dataUrl,
+              zIndex: 0,
+            });
+            dispatchEditorAction({
+              tool: "background",
+              action: "upload",
+              payload: { background: dataUrl },
+            });
+          };
+          img.src = dataUrl;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  };
+
+  const addBackgroundFromUpload = (src: string) => {
+    const img = new window.Image();
+    img.onload = () => {
+      onAddElement({
+        type: "image",
+        x: 0,
+        y: 0,
+        width: img.width,
+        height: img.height,
+        src: src,
+        zIndex: 0,
+      });
+      dispatchEditorAction({
+        tool: "background",
+        action: "upload-select",
+        payload: { background: src },
+      });
+    };
+    img.src = src;
+  };
 
   return (
-    <div className="space-y-1">
-      <CardOption
-        icon={<PaintBucket size={20} />}
-        title="Solid"
-        subtitle="Add a solid background"
-        onClick={() => {
-          onBackgroundChange("#ffffff");
-          dispatchEditorAction({ tool: "background", action: "solid", payload: { background: "#ffffff" } });
-        }}
+    <div className="space-y-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleBackgroundFileChange}
+        multiple
       />
-      <CardOption
-        icon={<CircleDot size={20} />}
-        title="Gradient"
-        subtitle="Create a gradient background"
-        onClick={() => {
-          const background = "linear-gradient(135deg, #a7d8ff 0%, #3182CE 100%)";
-          onBackgroundChange(background);
-          dispatchEditorAction({ tool: "background", action: "gradient", payload: { background } });
-        }}
-      />
-      <CardOption
-        icon={<ScanLine size={20} />}
-        title="Transparent"
-        subtitle="Add a transparent background"
-        onClick={() => {
-          onBackgroundChange("transparent");
-          dispatchEditorAction({ tool: "background", action: "transparent" });
-        }}
-      />
-      {/* <CardOption
-        icon={<Upload size={20} />}
-        title="My Backgrounds"
-        subtitle="Add from your uploads"
-        onClick={() => {
-          onAddElement({ type: "image", x: 0, y: 0, width: 1080, height: 1920, src: stockBackground, zIndex: 0, opacity: 100 });
-          dispatchEditorAction({ tool: "background", action: "my-backgrounds" });
-        }}
-      />
-      <CardOption
-        icon={<ImagePlus size={20} />}
-        title="Stock Photo"
-        subtitle="Search and add stock photos"
-        onClick={() => {
-          onAddElement({ type: "image", x: 0, y: 0, width: 1080, height: 1920, src: stockBackground, zIndex: 0, opacity: 100 });
-          dispatchEditorAction({ tool: "background", action: "stock-photo", payload: { src: stockBackground } });
-        }}
-      /> */}
+
+      <div
+        onClick={() => fileRef.current?.click()}
+        className="cursor-pointer flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left transition hover:bg-[#f3efff]"
+      >
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f3efff] text-[#7650e3]">
+          <Upload size={20} />
+        </div>
+        <div>
+          <div className="text-[15px] font-semibold text-[#4A5568]">Upload Background</div>
+          <div className="text-[13px] leading-snug text-[#718096]">Upload image as background</div>
+        </div>
+      </div>
+
+      {backgroundUploads.length > 0 && (
+        <div className="border-t border-[#e3e7ed] pt-4">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#8b84b3] mb-3">
+            Your Uploads
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {backgroundUploads.map((upload, i) => (
+              <button
+                key={i}
+                className="aspect-[4/3] overflow-hidden rounded-xl border border-[#e3e7ed] bg-white transition hover:border-[#b9c6dd]"
+                onClick={() => addBackgroundFromUpload(upload.src)}
+              >
+                <img src={upload.src} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-[#e3e7ed] pt-4 space-y-1">
+        <CardOption
+          icon={<CircleDot size={20} />}
+          title="Gradient"
+          subtitle="Create a gradient background"
+          onClick={() => {
+            const background = "linear-gradient(135deg, #a7d8ff 0%, #3182CE 100%)";
+            onBackgroundChange(background);
+            dispatchEditorAction({ tool: "background", action: "gradient", payload: { background } });
+          }}
+        />
+        <CardOption
+          icon={<ScanLine size={20} />}
+          title="Transparent"
+          subtitle="Add a transparent background"
+          onClick={() => {
+            onBackgroundChange("transparent");
+            dispatchEditorAction({ tool: "background", action: "transparent" });
+          }}
+        />
+      </div>
     </div>
   );
 };

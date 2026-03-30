@@ -11,6 +11,8 @@ import {
   Paintbrush,
   X,
   ChevronLeft,
+  ChevronDown,
+  Check,
   SlidersHorizontal,
   Move,
   Palette,
@@ -146,7 +148,7 @@ const tools: ToolItem[] = [
     id: "background",
     label: "Background",
     icon: ScanLine,
-    description: "Set solid, gradient, or image backgrounds",
+    description: "Upload, gradient, or transparent backgrounds",
     modes: ["image", "video"],
   },
   {
@@ -189,15 +191,21 @@ const genericElementTabs = [
   { id: "arrange" as const, label: "Arrange", icon: Move },
 ];
 
-const BOTTOM_BAR_HEIGHT = 86;
-const compactInputClass =
-  "h-9 rounded-lg border border-border bg-accent/40 px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20";
-const compactNumberClass =
-  "h-9 w-full rounded-lg border border-border bg-accent/40 px-2 text-center text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20";
+const BOTTOM_BAR_HEIGHT = 78;
+const PANEL_DOCK_OVERLAP = 8;
+const controlWidthClass = "w-full max-w-[168px]";
+const controlBaseClass =
+  "h-11 rounded-xl border border-[#d7deea] bg-white px-3 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] outline-none transition focus:border-[#b9c6dd] focus:ring-2 focus:ring-primary/15";
+const compactInputClass = `${controlWidthClass} ${controlBaseClass}`;
+const compactNumberClass = `${controlWidthClass} ${controlBaseClass} text-center`;
 const compactButtonClass =
-  "rounded-xl border border-border bg-white px-3 py-2 text-sm text-foreground transition hover:bg-accent";
+  "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#d7deea] bg-white px-3 text-sm font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] transition hover:border-[#c9d2e3] hover:bg-accent/45";
 const compactToggleClass =
-  "flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2";
+  "flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-[#d7deea] bg-white px-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] transition hover:border-[#c9d2e3]";
+const compactColorClass =
+  "h-11 w-14 rounded-xl border border-[#d7deea] bg-white p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]";
+const compactSliderClass =
+  "w-full max-w-[168px] cursor-pointer appearance-none bg-transparent py-2 accent-[#7650e3] touch-pan-x [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-[#7650e3] [&::-moz-range-thumb]:shadow-[0_2px_8px_rgba(118,80,227,0.35)] [&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#d7deea] [&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#d7deea] [&::-webkit-slider-thumb]:mt-[-5px] [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[#7650e3] [&::-webkit-slider-thumb]:shadow-[0_2px_8px_rgba(118,80,227,0.35)]";
 const defaultEffectProps: LayerEffectProps = {
   preset: "none",
   glowColor: "#38bdf8",
@@ -229,7 +237,7 @@ const numberValue = (value: number | undefined, fallback = 0) =>
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => (
-  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/95">
     {children}
   </div>
 );
@@ -238,11 +246,96 @@ const FieldRow: React.FC<{ label: string; children: React.ReactNode }> = ({
   label,
   children,
 }) => (
-  <div className="flex items-center justify-between gap-3">
-    <span className="text-sm text-muted-foreground">{label}</span>
-    <div className="flex items-center gap-2">{children}</div>
+  <div className="grid grid-cols-[108px_minmax(0,1fr)] items-center gap-3">
+    <span className="text-sm font-medium text-muted-foreground">{label}</span>
+    <div className="flex min-w-0 justify-end">{children}</div>
   </div>
 );
+
+interface UniformSelectOption {
+  value: string;
+  label: string;
+}
+
+const UniformSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  options: UniformSelectOption[];
+}> = ({ value, onChange, options }) => {
+  const [open, setOpen] = React.useState(false);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [open]);
+
+  const selectedOption =
+    options.find((option) => option.value === value) || options[0];
+
+  return (
+    <div ref={wrapperRef} className={`relative ${controlWidthClass}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`flex h-11 w-full items-center justify-between rounded-xl border border-[#d7deea] bg-white px-3 text-left text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition focus:outline-none focus:ring-2 focus:ring-primary/15 ${
+          open ? "border-[#b9c6dd] ring-2 ring-primary/10" : "hover:border-[#c9d2e3] hover:bg-accent/35"
+        }`}
+      >
+        <span className="truncate">{selectedOption?.label || value}</span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-muted-foreground transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[90] overflow-hidden rounded-xl border border-[#d7deea] bg-white shadow-[0_18px_36px_rgba(15,23,42,0.14)]">
+          {options.map((option) => {
+            const isSelected = option.value === value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex h-10 w-full items-center justify-between px-3 text-left text-sm transition ${
+                  isSelected
+                    ? "bg-[#7650e3]/10 text-[#7650e3]"
+                    : "text-foreground hover:bg-accent/45"
+                }`}
+              >
+                <span className="truncate">{option.label}</span>
+                <Check
+                  size={14}
+                  className={isSelected ? "opacity-100" : "opacity-0"}
+                />
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 const ToggleRow: React.FC<{
   label: string;
@@ -254,14 +347,14 @@ const ToggleRow: React.FC<{
     onClick={() => onChange(!checked)}
     className={compactToggleClass}
   >
-    <span className="text-sm text-foreground">{label}</span>
+    <span className="text-sm font-medium text-foreground">{label}</span>
     <span
       className={`relative flex h-7 w-12 items-center rounded-full p-0.5 transition-colors ${
         checked ? "bg-[#7650e3]" : "bg-[#e5e7eb]"
       }`}
     >
       <span
-        className={`h-6 w-6 rounded-full bg-white shadow transition-transform ${
+        className={`h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
           checked ? "translate-x-5" : "translate-x-0"
         }`}
       />
@@ -281,7 +374,7 @@ const NumericGrid: React.FC<{
       { key: "height", label: "H", value: numberValue(layer.height, 1) },
     ].map((field) => (
       <label key={field.key} className="space-y-1.5">
-        <span className="text-xs font-medium text-muted-foreground">
+        <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
           {field.label}
         </span>
         <input
@@ -305,8 +398,8 @@ const LinkField: React.FC<{
 }> = ({ value, onChange }) => (
   <div className="space-y-2">
     <SectionTitle>Interactivity</SectionTitle>
-    <div className="flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2">
-      <LinkIcon size={16} className="text-muted-foreground" />
+    <div className="flex h-11 items-center gap-2 rounded-xl border border-border bg-white px-3">
+      <LinkIcon size={16} className="shrink-0 text-muted-foreground" />
       <input
         type="text"
         value={value}
@@ -325,7 +418,7 @@ const LayerActions: React.FC<{
 }> = ({ onDuplicate, onDelete, onMoveLayer }) => (
   <div className="space-y-3">
     <SectionTitle>Layer Actions</SectionTitle>
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 gap-3">
       <button
         type="button"
         onClick={onDuplicate}
@@ -379,7 +472,7 @@ const LayerActions: React.FC<{
       <button
         type="button"
         onClick={onDelete}
-        className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive transition hover:bg-destructive/10"
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 text-sm font-medium text-destructive transition hover:bg-destructive/10"
       >
         <span className="inline-flex items-center gap-2">
           <Trash2 size={14} />
@@ -399,68 +492,68 @@ const TextContentPanel: React.FC<{
     <textarea
       value={layer.content || ""}
       onChange={(event) => onUpdate({ content: event.target.value })}
-      className="min-h-[140px] w-full rounded-xl border border-border bg-accent/30 px-3 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+      className="min-h-[144px] w-full rounded-xl border border-border bg-accent/25 px-3 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
       placeholder="Enter text"
     />
     <FieldRow label="Alignment">
-      <select
+      <UniformSelect
         value={layer.textAlign || "left"}
-        onChange={(event) =>
+        onChange={(value) =>
           onUpdate({
-            textAlign: event.target.value as CanvasElement["textAlign"],
+            textAlign: value as CanvasElement["textAlign"],
           })
         }
-        className={compactInputClass}
-      >
-        <option value="left">Left</option>
-        <option value="center">Center</option>
-        <option value="right">Right</option>
-        <option value="justify">Justify</option>
-      </select>
+        options={[
+          { value: "left", label: "Left" },
+          { value: "center", label: "Center" },
+          { value: "right", label: "Right" },
+          { value: "justify", label: "Justify" },
+        ]}
+      />
     </FieldRow>
     <FieldRow label="Transform">
-      <select
+      <UniformSelect
         value={layer.textTransform || "none"}
-        onChange={(event) =>
+        onChange={(value) =>
           onUpdate({
-            textTransform: event.target.value as CanvasElement["textTransform"],
+            textTransform: value as CanvasElement["textTransform"],
           })
         }
-        className={compactInputClass}
-      >
-        <option value="none">None</option>
-        <option value="uppercase">Uppercase</option>
-      </select>
+        options={[
+          { value: "none", label: "None" },
+          { value: "uppercase", label: "Uppercase" },
+        ]}
+      />
     </FieldRow>
     <FieldRow label="List">
-      <select
+      <UniformSelect
         value={layer.listStyle || "none"}
-        onChange={(event) =>
+        onChange={(value) =>
           onUpdate({
-            listStyle: event.target.value as CanvasElement["listStyle"],
+            listStyle: value as CanvasElement["listStyle"],
           })
         }
-        className={compactInputClass}
-      >
-        <option value="none">None</option>
-        <option value="bulleted">Bulleted</option>
-        <option value="numbered">Numbered</option>
-      </select>
+        options={[
+          { value: "none", label: "None" },
+          { value: "bulleted", label: "Bulleted" },
+          { value: "numbered", label: "Numbered" },
+        ]}
+      />
     </FieldRow>
     {(layer.listStyle || "none") !== "none" ? (
       <FieldRow label="List Position">
-        <select
+        <UniformSelect
           value={layer.listPosition || "outside"}
-          onChange={(event) =>
+          onChange={(value) =>
             onUpdate({
-              listPosition: event.target.value as CanvasElement["listPosition"],
+              listPosition: value as CanvasElement["listPosition"],
             })
           }
-          className={compactInputClass}
-        >
-          <option value="outside">Outside</option>
-          <option value="inside">Inside</option>
-        </select>
+          options={[
+            { value: "outside", label: "Outside" },
+            { value: "inside", label: "Inside" },
+          ]}
+        />
       </FieldRow>
     ) : null}
     <LinkField
@@ -494,24 +587,24 @@ const TextStylePanel: React.FC<{
       />
     </FieldRow>
     <FieldRow label="Weight">
-      <select
+      <UniformSelect
         value={layer.fontWeight || "400"}
-        onChange={(event) => onUpdate({ fontWeight: event.target.value })}
-        className={compactInputClass}
-      >
-        <option value="300">Light</option>
-        <option value="400">Regular</option>
-        <option value="500">Medium</option>
-        <option value="600">Semibold</option>
-        <option value="700">Bold</option>
-      </select>
+        onChange={(value) => onUpdate({ fontWeight: value })}
+        options={[
+          { value: "300", label: "Light" },
+          { value: "400", label: "Regular" },
+          { value: "500", label: "Medium" },
+          { value: "600", label: "Semibold" },
+          { value: "700", label: "Bold" },
+        ]}
+      />
     </FieldRow>
     <FieldRow label="Color">
       <input
         type="color"
         value={layer.color || "#123a63"}
         onChange={(event) => onUpdate({ color: event.target.value })}
-        className="h-9 w-10 rounded-lg border border-border"
+        className={compactColorClass}
       />
     </FieldRow>
     <FieldRow label="Background">
@@ -521,24 +614,23 @@ const TextStylePanel: React.FC<{
         onChange={(event) =>
           onUpdate({ textBackgroundColor: event.target.value })
         }
-        className="h-9 w-10 rounded-lg border border-border"
+        className={compactColorClass}
       />
     </FieldRow>
     <FieldRow label="Vertical Align">
-      <select
+      <UniformSelect
         value={layer.textVerticalAlign || "top"}
-        onChange={(event) =>
+        onChange={(value) =>
           onUpdate({
-            textVerticalAlign: event.target
-              .value as CanvasElement["textVerticalAlign"],
+            textVerticalAlign: value as CanvasElement["textVerticalAlign"],
           })
         }
-        className={compactInputClass}
-      >
-        <option value="top">Top</option>
-        <option value="middle">Middle</option>
-        <option value="bottom">Bottom</option>
-      </select>
+        options={[
+          { value: "top", label: "Top" },
+          { value: "middle", label: "Middle" },
+          { value: "bottom", label: "Bottom" },
+        ]}
+      />
     </FieldRow>
     <FieldRow label="Line Height">
       <input
@@ -587,7 +679,7 @@ const ImageActionsPanel: React.FC<{
   onMoveLayer: (direction: "up" | "down" | "top" | "bottom") => void;
 }> = ({ layer, onDuplicate, onDelete, onMoveLayer }) => (
   <div className="space-y-4">
-    <div className="rounded-xl border border-border bg-accent/20 px-4 py-3 text-sm text-muted-foreground">
+    <div className="rounded-xl border border-border bg-accent/15 px-4 py-3 text-sm text-muted-foreground">
       Use actions for quick layer operations and ordering.
     </div>
     <LayerActions
@@ -597,7 +689,7 @@ const ImageActionsPanel: React.FC<{
     />
     <div className="space-y-2">
       <SectionTitle>Source</SectionTitle>
-      <div className="rounded-xl border border-border bg-white px-3 py-2 text-xs text-muted-foreground break-all">
+      <div className="rounded-xl border border-border bg-white px-3 py-3 text-xs leading-5 text-muted-foreground break-all">
         {layer.src || "No source"}
       </div>
     </div>
@@ -637,45 +729,39 @@ const ImageEffectsPanel: React.FC<{
     <div className="space-y-4">
       <SectionTitle>Effects</SectionTitle>
       <FieldRow label="Preset">
-        <select
+        <UniformSelect
           value={effectProps.preset}
-          onChange={(event) =>
+          onChange={(value) =>
             updateEffect({
-              preset: event.target.value as LayerEffectPreset,
+              preset: value as LayerEffectPreset,
             })
           }
-          className={compactInputClass}
-        >
-          {presetOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          options={presetOptions.map((option) => ({
+            value: option,
+            label: option,
+          }))}
+        />
       </FieldRow>
       <FieldRow label="Blend Mode">
-        <select
+        <UniformSelect
           value={effectProps.blendMode}
-          onChange={(event) =>
+          onChange={(value) =>
             updateEffect({
-              blendMode: event.target.value as BlendModeOption,
+              blendMode: value as BlendModeOption,
             })
           }
-          className={compactInputClass}
-        >
-          {blendOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          options={blendOptions.map((option) => ({
+            value: option,
+            label: option,
+          }))}
+        />
       </FieldRow>
       <FieldRow label="Glow Color">
         <input
           type="color"
           value={effectProps.glowColor}
           onChange={(event) => updateEffect({ glowColor: event.target.value })}
-          className="h-9 w-10 rounded-lg border border-border"
+          className={compactColorClass}
         />
       </FieldRow>
       <FieldRow label="Glow Intensity">
@@ -696,7 +782,7 @@ const ImageEffectsPanel: React.FC<{
           onChange={(event) =>
             updateEffect({ shadowColor: event.target.value })
           }
-          className="h-9 w-10 rounded-lg border border-border"
+          className={compactColorClass}
         />
       </FieldRow>
       <FieldRow label="Shadow Blur">
@@ -781,33 +867,31 @@ const ImageAdjustmentsPanel: React.FC<{
                 [item.key]: Number(event.target.value),
               } as Partial<CanvasElement>)
             }
-            className="w-36"
+            className={compactSliderClass}
           />
         </FieldRow>
       )
     )}
     <FieldRow label="Multiply">
-      <select
+      <UniformSelect
         value={layer.effectProps?.blendMode || "normal"}
-        onChange={(event) =>
+        onChange={(value) =>
           onUpdate({
             effectProps: {
               ...(layer.effectProps || defaultEffectProps),
-              blendMode: event.target.value as BlendModeOption,
+              blendMode: value as BlendModeOption,
             },
           })
         }
-        className={compactInputClass}
-      >
-        {blendOptions.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+        options={blendOptions.map((option) => ({
+          value: option,
+          label: option,
+        }))}
+      />
     </FieldRow>
-    <ToggleRow
-      label="Tint"
+    <div className="space-y-3">
+      <ToggleRow
+        label="Tint"
       checked={Boolean(layer.tintEnabled)}
       onChange={(checked) => onUpdate({ tintEnabled: checked })}
     />
@@ -831,11 +915,12 @@ const ImageAdjustmentsPanel: React.FC<{
       checked={Boolean(layer.removeColorEnabled)}
       onChange={(checked) => onUpdate({ removeColorEnabled: checked })}
     />
-    <ToggleRow
-      label="Roundness"
-      checked={Boolean(layer.roundnessEnabled)}
-      onChange={(checked) => onUpdate({ roundnessEnabled: checked })}
-    />
+      <ToggleRow
+        label="Roundness"
+        checked={Boolean(layer.roundnessEnabled)}
+        onChange={(checked) => onUpdate({ roundnessEnabled: checked })}
+      />
+    </div>
   </div>
 );
 
@@ -918,7 +1003,7 @@ const GenericContentPanel: React.FC<{
   }
 
   return (
-    <div className="rounded-xl border border-border bg-accent/20 px-4 py-3 text-sm text-muted-foreground">
+    <div className="rounded-xl border border-border bg-accent/15 px-4 py-3 text-sm text-muted-foreground">
       No separate content controls for this layer.
     </div>
   );
@@ -933,20 +1018,20 @@ const GenericStylePanel: React.FC<{
       <div className="space-y-4">
         <SectionTitle>Shape</SectionTitle>
         <FieldRow label="Type">
-          <select
+          <UniformSelect
             value={layer.shapeType || "rectangle"}
-            onChange={(event) =>
+            onChange={(value) =>
               onUpdate({
-                shapeType: event.target.value as CanvasElement["shapeType"],
+                shapeType: value as CanvasElement["shapeType"],
               })
             }
-            className={compactInputClass}
-          >
-            <option value="rectangle">Rectangle</option>
-            <option value="circle">Circle</option>
-            <option value="triangle">Triangle</option>
-            <option value="line">Line</option>
-          </select>
+            options={[
+              { value: "rectangle", label: "Rectangle" },
+              { value: "circle", label: "Circle" },
+              { value: "triangle", label: "Triangle" },
+              { value: "line", label: "Line" },
+            ]}
+          />
         </FieldRow>
         <FieldRow label="Fill">
           <input
@@ -955,7 +1040,7 @@ const GenericStylePanel: React.FC<{
             onChange={(event) =>
               onUpdate({ backgroundColor: event.target.value })
             }
-            className="h-9 w-10 rounded-lg border border-border"
+            className={compactColorClass}
           />
         </FieldRow>
         <FieldRow label="Border">
@@ -963,7 +1048,7 @@ const GenericStylePanel: React.FC<{
             type="color"
             value={layer.borderColor || "#000000"}
             onChange={(event) => onUpdate({ borderColor: event.target.value })}
-            className="h-9 w-10 rounded-lg border border-border"
+            className={compactColorClass}
           />
         </FieldRow>
         <FieldRow label="Border Width">
@@ -1005,7 +1090,7 @@ const GenericStylePanel: React.FC<{
             type="color"
             value={layer.color || "#000000"}
             onChange={(event) => onUpdate({ color: event.target.value })}
-            className="h-9 w-10 rounded-lg border border-border"
+            className={compactColorClass}
           />
         </FieldRow>
         <FieldRow label="Border Color">
@@ -1013,7 +1098,7 @@ const GenericStylePanel: React.FC<{
             type="color"
             value={layer.borderColor || "#000000"}
             onChange={(event) => onUpdate({ borderColor: event.target.value })}
-            className="h-9 w-10 rounded-lg border border-border"
+            className={compactColorClass}
           />
         </FieldRow>
         <FieldRow label="Border Width">
@@ -1054,7 +1139,7 @@ const GenericStylePanel: React.FC<{
           onChange={(event) =>
             onUpdate({ opacity: Number(event.target.value) })
           }
-          className="w-36"
+          className={compactSliderClass}
         />
       </FieldRow>
     </div>
@@ -1068,7 +1153,7 @@ const ArrangePanel: React.FC<{
   onDelete: () => void;
   onMoveLayer: (direction: "up" | "down" | "top" | "bottom") => void;
 }> = ({ layer, onUpdate, onDuplicate, onDelete, onMoveLayer }) => (
-  <div className="space-y-5">
+  <div className="space-y-6">
     <div className="space-y-3">
       <SectionTitle>Position & Size</SectionTitle>
       <NumericGrid layer={layer} onUpdate={onUpdate} />
@@ -1095,7 +1180,7 @@ const ArrangePanel: React.FC<{
           onChange={(event) =>
             onUpdate({ opacity: Number(event.target.value) })
           }
-          className="w-36"
+          className={compactSliderClass}
         />
       </FieldRow>
     </div>
@@ -1503,11 +1588,11 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           isOpen ? "translate-y-0" : "translate-y-full"
         }`}
         style={{
-          bottom: `calc(${BOTTOM_BAR_HEIGHT}px + env(safe-area-inset-bottom))`,
+          bottom: `calc(${BOTTOM_BAR_HEIGHT - PANEL_DOCK_OVERLAP}px + env(safe-area-inset-bottom))`,
         }}
       >
         <div
-          className="mx-0 rounded-t-[22px] border-t border-border bg-background shadow-[0_-8px_24px_rgba(0,0,0,0.08)]"
+          className="mx-0 rounded-t-[22px] border-t border-border bg-background shadow-[0_-10px_28px_rgba(15,23,42,0.08)]"
           style={{
             maxHeight: "68dvh",
           }}
@@ -1516,49 +1601,52 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             <div className="h-1.5 w-12 rounded-full bg-muted" />
           </div>
 
-          <div className="flex items-center justify-between px-4 pb-2 pt-2">
-            <div className="flex items-center gap-2">
-              {openTab === "add" && addToolView === "tool" && (
+          <div className="grid grid-cols-[40px_minmax(0,1fr)_40px] items-center px-4 pb-3 pt-2">
+            <div className="flex justify-start">
+              {openTab === "add" && addToolView === "tool" ? (
                 <button
                   onClick={() => setAddToolView("list")}
-                  className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-accent"
                 >
                   <ChevronLeft size={18} />
                 </button>
-              )}
-              <h3 className="text-[16px] font-semibold text-foreground">
-                {getHeaderTitle(openTab, addToolView, activeTool)}
-              </h3>
+              ) : null}
             </div>
 
-            <button
-              onClick={() => setOpenTab(null)}
-              className="rounded-md p-2 text-muted-foreground hover:bg-accent"
-            >
-              <X size={18} />
-            </button>
+            <h3 className="text-center text-[16px] font-semibold text-foreground">
+              {getHeaderTitle(openTab, addToolView, activeTool)}
+            </h3>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setOpenTab(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-accent"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div
-            className="overflow-y-auto px-3 pb-4"
+            className="overflow-y-auto overscroll-contain px-4 pb-8"
             data-allow-touch-scroll="y"
-            style={{ maxHeight: "calc(68dvh - 64px)" }}
+            style={{ maxHeight: "calc(68dvh - 72px)" }}
           >
             {openTab === "add" && addToolView === "list" && (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {filteredTools.map((tool) => {
                   const Icon = tool.icon;
                   return (
                     <button
                       key={tool.id}
                       onClick={() => handleOpenTool(tool.id)}
-                      className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left hover:bg-accent/60"
+                      className="flex w-full items-start gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition hover:border-border hover:bg-accent/45"
                     >
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f3efff] text-[#7650e3]">
                         <Icon size={20} strokeWidth={1.8} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[15px] font-semibold text-foreground">
+                        <div className="text-[15px] font-semibold leading-5 text-foreground">
                           {tool.label}
                         </div>
                         <div className="text-[13px] leading-snug text-muted-foreground">
@@ -1574,7 +1662,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             {openTab === "add" &&
               addToolView === "tool" &&
               activeTool !== "select" && (
-                <div className="px-1 pb-4">
+                <div className="px-0.5 pb-4">
                   <ToolbarSidePanel
                     activeTool={activeTool}
                     onAddElement={(el) => {
@@ -1604,13 +1692,13 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
               )}
 
             {!selectedElement && openTab && openTab !== "add" && (
-              <div className="space-y-4 px-1 pb-4">
+              <div className="space-y-4 px-0.5 pb-4">
                 {renderDesignTabPanel()}
               </div>
             )}
 
             {selectedElement && openTab && openTab !== "add" && (
-              <div className="space-y-4 px-1 pb-4">
+              <div className="space-y-4 px-0.5 pb-4">
                 {renderElementTabPanel()}
               </div>
             )}
@@ -1619,7 +1707,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
       </div>
 
       <div
-        className="fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background px-2 py-1 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]"
+        className="fixed inset-x-0 bottom-0 z-[60] border-t border-border bg-background px-2 py-2 shadow-[0_-4px_12px_rgba(15,23,42,0.06)]"
         style={{
           paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)",
         }}
@@ -1627,11 +1715,13 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleDockTabClick(primaryTab.id)}
-            className={`flex min-w-[72px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 transition-colors ${
-              openTab === primaryTab.id ? "text-[#7650e3]" : "text-foreground"
+            className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+              openTab === primaryTab.id
+                ? "bg-[#7650e3]/10 text-[#7650e3]"
+                : "text-foreground"
             }`}
           >
-            <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#7650e3] text-primary-foreground">
+            <div className="mb-1 flex h-20 w-7 items-center justify-center rounded-full bg-[#7650e3] text-primary-foreground shadow-sm">
               <primaryTab.icon size={18} strokeWidth={1.8} />
             </div>
             <span className="whitespace-nowrap text-[11px] font-medium">
@@ -1643,7 +1733,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             className="min-w-0 flex-1 overflow-x-auto"
             data-allow-touch-scroll="x"
           >
-            <div className="flex items-center gap-1 pr-1">
+            <div className="flex items-center gap-2 pr-1">
               {scrollableTabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = openTab === tab.id;
@@ -1652,7 +1742,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                   <button
                     key={tab.id}
                     onClick={() => handleDockTabClick(tab.id)}
-                    className={`flex min-w-[78px] shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 transition-colors ${
+                    className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
                       isActive
                         ? "bg-[#7650e3]/10 text-[#7650e3]"
                         : "text-muted-foreground"
