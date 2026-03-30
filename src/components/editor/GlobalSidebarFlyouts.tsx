@@ -280,28 +280,25 @@ export const DrawFlyout: React.FC<{
           </div>
 
           <div className="grid grid-cols-3 gap-3 px-0.5">
-            <div className=" w-full">
-
-            <DrawBrushPreview
-              active={tool === "pencil"}
-              label="Pencil"
-              onClick={() => selectTool("pencil")}
-              preview={
-                <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true">
-                  <path d="M10 16C15 10 22 7 37 7" stroke="#7650e3" strokeWidth="3.2" strokeLinecap="round" />
-                </svg>
-              }
-            />
+            <div className="w-full">
+              <DrawBrushPreview
+                active={tool === "pencil"}
+                label="Pencil"
+                onClick={() => selectTool("pencil")}
+                preview={
+                  <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true" style={{ color }}>
+                    <path d="M10 16C15 10 22 7 37 7" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" />
+                  </svg>
+                }
+              />
             </div>
             <DrawBrushPreview
               active={tool === "circle"}
               label="Circle"
               onClick={() => selectTool("circle")}
               preview={
-                <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true">
-                  {[10, 16, 22, 28, 34, 40].map((cx, index) => (
-                    <circle key={cx} cx={cx} cy={11} r={index < 2 ? 2.4 : index < 4 ? 3 : 3.6} fill={`rgba(88, 98, 124, ${0.28 + index * 0.1})`} />
-                  ))}
+                <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true" style={{ color }}>
+                  <circle cx="26" cy="11" r="6.5" stroke="currentColor" strokeWidth="2.4" />
                 </svg>
               }
             />
@@ -310,7 +307,7 @@ export const DrawFlyout: React.FC<{
               label="Spray"
               onClick={() => selectTool("spray")}
               preview={
-                <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true">
+                <svg width="52" height="22" viewBox="0 0 52 22" fill="none" aria-hidden="true" style={{ color }}>
                   {[
                     [12, 13, 0.16],
                     [15, 11, 0.22],
@@ -323,7 +320,7 @@ export const DrawFlyout: React.FC<{
                     [36, 12, 0.18],
                     [39, 10, 0.14],
                   ].map(([cx, cy, opacity], index) => (
-                    <circle key={index} cx={cx} cy={cy} r="2" fill={`rgba(120, 120, 120, ${opacity})`} />
+                    <circle key={index} cx={cx} cy={cy} r="2" fill="currentColor" fillOpacity={opacity} />
                   ))}
                 </svg>
               }

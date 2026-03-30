@@ -16,14 +16,18 @@ import {
   Trash2,
   Type,
 } from "lucide-react";
-import type { CanvasElement, LayerEffectProps } from "./EditorShell";
+import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
+import { PositionSidebar } from "./PositionSidebar";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 
 interface TextPropertiesSidebarProps {
   selectedText: CanvasElement;
+  canvasSize: CanvasSizePreset;
+  maxLayerZIndex: number;
   onUpdate: (id: string, newProps: Partial<CanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onMoveLayer: (id: string, dir: "up" | "down" | "top" | "bottom") => void;
   onStartCanvasEdit?: (id: string) => void;
 }
 
@@ -58,9 +62,7 @@ const defaultEffects: LayerEffectProps = {
 
 const SHADOW_OPTIONS = [
   { label: "None", value: "none" as const },
-  { label: "Drop Shadow", value: "drop-shadow" as const },
   { label: "Neon Glow", value: "neon-glow" as const },
-  { label: "Pulse", value: "pulse" as const },
 ];
 
 const ROW_LABEL = "text-[11px] font-medium text-[#6b7280]";
@@ -213,21 +215,29 @@ const IconToggleGroup: React.FC<{
 
 export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   selectedText,
+  canvasSize,
+  maxLayerZIndex,
   onUpdate,
   onDuplicate,
   onDelete,
+  onMoveLayer,
   onStartCanvasEdit,
 }) => {
-  const positionSectionRef = React.useRef<HTMLDivElement>(null);
+  const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [fontSearch, setFontSearch] = React.useState("");
   const [fontMenuOpen, setFontMenuOpen] = React.useState(false);
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
+  const isLocked = Boolean(selectedText.locked);
   const effect = normalizeEffectProps(selectedText);
   const lineHeightUi = Math.round((selectedText.lineHeight ?? 1.2) * 100);
   const shadowMode =
     effect.preset === "drop-shadow" || effect.preset === "neon-glow" || effect.preset === "pulse"
       ? effect.preset
       : "none";
+
+  React.useEffect(() => {
+    setActivePanel("main");
+  }, [selectedText.id]);
 
   const filteredFonts = React.useMemo(
     () =>
@@ -291,18 +301,26 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
     selectedText.textTransform === "uppercase" ? "uppercase" : "",
   ].filter(Boolean);
 
+  if (activePanel === "position") {
+    return (
+      <PositionSidebar
+        layer={selectedText}
+        canvasSize={canvasSize}
+        maxLayerZIndex={maxLayerZIndex}
+        onUpdate={updateText}
+        onMoveLayer={onMoveLayer}
+        onBack={() => setActivePanel("main")}
+      />
+    );
+  }
+
   return (
     <div className="bg-white px-3 pb-5 pt-2 text-[#1f2937]">
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-4 gap-2 mb-2">
         <ActionButton
           icon={<Move size={13} />}
           label="Position"
-          onClick={() =>
-            positionSectionRef.current?.scrollIntoView({
-              behavior: "smooth",
-              block: "start",
-            })
-          }
+          onClick={() => setActivePanel("position")}
         />
         <ActionButton
           icon={<Copy size={13} />}
@@ -314,7 +332,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           label="Edit"
           onClick={startCanvasEdit}
         />
-        <ActionButton label="Copy Style" onClick={handleCopyStyle} />
+        {/* <ActionButton label="Copy Style" onClick={handleCopyStyle} /> */}
         <ActionButton
           icon={<Trash2 size={13} />}
           label="Delete"
@@ -324,17 +342,17 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
       </div>
 
       <Section title="Text" divider={false}>
-        <div className="space-y-2">
+        <div className="space-y-2 py-2">
           <textarea
             value={selectedText.content || ""}
             onChange={(event) => updateText({ content: event.target.value })}
             placeholder="Type your text"
-            className="min-h-[120px] w-full resize-y rounded-[3px] border border-[#d7dce3] bg-white px-3 py-2 text-[13px] leading-5 text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
+            className="min-h-[120px] w-full resize-y rounded-[3px]  border border-[#d7dce3] bg-white px-3 py-2 text-[13px] leading-5 text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
           />
           <button
             type="button"
             onClick={startCanvasEdit}
-            className="inline-flex h-9 items-center justify-center rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#7650e3] transition "
+            className="inline-flex h-9 items-center justify-center  rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#7650e3] transition "
           >
             Edit directly on canvas
           </button>
@@ -535,7 +553,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             onChange={(value) => updateText({ letterSpacing: value })}
           />
 
-          <div className="space-y-2">
+          {/* <div className="space-y-2">
             <div className={ROW_LABEL}>List</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="relative">
@@ -587,7 +605,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
                 />
               </div>
             </div>
-          </div>
+          </div> */}
 
           <ToggleSwitch
             label="Background"
@@ -601,7 +619,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             }
           />
 
-          <div className="space-y-2">
+          <div className="space-y-2 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className={ROW_LABEL}>Shadow</div>
               <div className="relative w-[128px] shrink-0">
@@ -641,7 +659,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
         </div>
       </Section>
 
-      <Section title="Interactivity">
+      {/* <Section title="Interactivity">
         <div className="space-y-2.5">
           <div className={ROW_LABEL}>Link</div>
           <div className="relative">
@@ -668,10 +686,10 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             </button>
           </div>
         </div>
-      </Section>
+      </Section> */}
 
       <Section title="Position">
-        <div ref={positionSectionRef} className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
           {[
             { label: "X", value: selectedText.x, key: "x" },
             { label: "Y", value: selectedText.y, key: "y" },
@@ -683,13 +701,19 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
               <input
                 type="number"
                 inputMode="decimal"
+                disabled={isLocked}
                 value={Math.round(item.value)}
                 onChange={(event) =>
+                  !isLocked &&
                   updateText({
                     [item.key]: Number(event.target.value),
                   } as Partial<CanvasElement>)
                 }
-                className="h-9 w-full rounded-[3px] border border-[#d7dce3] bg-white px-3 text-[12px] font-medium text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
+                className={`h-9 w-full rounded-[3px] border px-3 text-[12px] font-medium outline-none focus:ring-1 ${
+                  isLocked
+                    ? "cursor-not-allowed border-[#e5e7eb] bg-[#f3f4f6] text-[#9ca3af]"
+                    : "border-[#d7dce3] bg-white text-[#1f2937] focus:ring-[#9ed8fb]"
+                }`}
               />
             </label>
           ))}

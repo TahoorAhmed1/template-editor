@@ -116,6 +116,7 @@ export interface CanvasElement {
   borderRadius?: number;
   rotation?: number;
   scale?: number;
+  locked?: boolean;
   opacity?: number;
   visible?: boolean;
   zIndex?: number;
@@ -232,6 +233,7 @@ const normalizeLayer = (
 ): CanvasElement => ({
   ...layer,
   scale: layer.scale ?? 1,
+  locked: layer.locked ?? false,
   opacity: layer.opacity ?? 100,
   visible: layer.visible ?? true,
   zIndex: layer.zIndex ?? fallbackZIndex,
@@ -252,6 +254,32 @@ const normalizeLayer = (
     ...(layer.effectProps ?? {}),
   },
 });
+
+const LOCKED_POSITION_KEYS: Array<keyof CanvasElement> = [
+  "x",
+  "y",
+  "width",
+  "height",
+  "rotation",
+  "scale",
+  "zIndex",
+];
+
+const stripLockedPositionUpdates = (
+  currentElement: CanvasElement,
+  updates: Partial<CanvasElement>,
+): Partial<CanvasElement> => {
+  if (!currentElement.locked) {
+    return updates;
+  }
+
+  const sanitizedUpdates = { ...updates };
+  LOCKED_POSITION_KEYS.forEach((key) => {
+    delete sanitizedUpdates[key];
+  });
+
+  return sanitizedUpdates;
+};
 
 const reindexLayers = (layers: CanvasElement[]) =>
   layers.map((layer, index) => ({
@@ -565,11 +593,28 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   const updateElement = useCallback(
     (id: string, updates: Partial<CanvasElement>) => {
       setElements((prev) => {
-        const next = prev.map((el, index) =>
-          el.id === id
-            ? normalizeLayer({ ...el, ...updates }, el.zIndex ?? index + 1)
-            : el,
-        );
+        let changed = false;
+        const next = prev.map((el, index) => {
+          if (el.id !== id) {
+            return el;
+          }
+
+          const sanitizedUpdates = stripLockedPositionUpdates(el, updates);
+          if (Object.keys(sanitizedUpdates).length === 0) {
+            return el;
+          }
+
+          changed = true;
+          return normalizeLayer(
+            { ...el, ...sanitizedUpdates },
+            el.zIndex ?? index + 1,
+          );
+        });
+
+        if (!changed) {
+          return prev;
+        }
+
         pushHistory(next);
         return next;
       });
@@ -596,6 +641,11 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
     if (!selectedLayerId) return;
 
     setElements((prev) => {
+      const selectedLayer = prev.find((el) => el.id === selectedLayerId);
+      if (!selectedLayer || selectedLayer.locked) {
+        return prev;
+      }
+
       const next = prev.map((el) =>
         el.id === selectedLayerId
           ? { ...el, x: el.x + dx, y: el.y + dy }
@@ -822,13 +872,25 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
   const moveElementLayer = useCallback(
     (id: string, direction: "up" | "down" | "top" | "bottom") => {
+      clearElementPreview(id);
+      setSelectedLayerId(id);
+
       setElements((prev) => {
         const ordered = [...prev].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
         const idx = ordered.findIndex((e) => e.id === id);
         if (idx === -1) return prev;
 
+        if ((direction === "down" || direction === "bottom") && idx === 0) {
+          return prev;
+        }
+
+        if ((direction === "up" || direction === "top") && idx === ordered.length - 1) {
+          return prev;
+        }
+
         const next = [...ordered];
         const [item] = next.splice(idx, 1);
+        if (item.locked) return prev;
 
         switch (direction) {
           case "up":
@@ -850,7 +912,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         return normalized;
       });
     },
-    [pushHistory]
+    [clearElementPreview, pushHistory]
   );
 
   const reorderLayers = useCallback(
@@ -1558,6 +1620,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         <div className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l border-editor-inspector-border bg-editor-inspector">
           <Inspector
             selectedElement={selectedElementPreview}
+            maxLayerZIndex={layers.length}
             onUpdateElement={updateElement}
             onDeleteElement={deleteElement}
             onDuplicateElement={duplicateElement}

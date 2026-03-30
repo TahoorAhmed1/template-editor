@@ -3,11 +3,15 @@ import type { CanvasElement } from "./EditorShell";
 export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
   if (element.type !== "text" && element.type !== "image") return false;
 
-  const effect = element.effectProps;
-
   if (element.type === "text" && element.textBackgroundColor) {
     return true;
   }
+
+  if (element.type === "text") {
+    return false;
+  }
+
+  const effect = element.effectProps;
 
   if (element.type === "image") {
     const hasImageAdjustments =

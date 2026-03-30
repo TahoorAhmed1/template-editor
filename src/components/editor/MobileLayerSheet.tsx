@@ -75,9 +75,13 @@ const NumericGrid: React.FC<{
         <span className="text-xs font-medium text-muted-foreground">{field.label}</span>
         <input
           type="number"
+          disabled={Boolean(layer.locked)}
           value={Math.round(field.value)}
-          onChange={(event) => onUpdate({ [field.key]: Number(event.target.value) } as Partial<CanvasElement>)}
-          className={compactNumberClass}
+          onChange={(event) =>
+            !layer.locked &&
+            onUpdate({ [field.key]: Number(event.target.value) } as Partial<CanvasElement>)
+          }
+          className={`${compactNumberClass} ${layer.locked ? "cursor-not-allowed bg-accent/20 text-muted-foreground" : ""}`}
         />
       </label>
     ))}

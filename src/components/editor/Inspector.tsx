@@ -12,6 +12,7 @@ import { TextPropertiesSidebar } from "./TextPropertiesSidebar";
 
 interface InspectorProps {
   selectedElement: CanvasElement | null;
+  maxLayerZIndex: number;
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
@@ -42,6 +43,7 @@ interface InspectorProps {
 
 export const Inspector: React.FC<InspectorProps> = ({
   selectedElement,
+  maxLayerZIndex,
   onUpdateElement,
   onDeleteElement,
   onDuplicateElement,
@@ -102,10 +104,12 @@ export const Inspector: React.FC<InspectorProps> = ({
         ) : selectedElement ? (
           <ElementInspector
             element={selectedElement}
+            canvasSize={canvasSize}
+            maxLayerZIndex={maxLayerZIndex}
             onUpdate={(updates) => onUpdateElement(selectedElement.id, updates)}
             onDelete={() => onDeleteElement(selectedElement.id)}
             onDuplicate={() => onDuplicateElement(selectedElement.id)}
-            onMoveLayer={(dir) => onMoveLayer(selectedElement.id, dir)}
+            onMoveLayer={onMoveLayer}
             onStartTextEditing={onStartTextEditing}
           />
         ) : (
@@ -509,18 +513,22 @@ export const DesignInspector: React.FC<DesignInspectorProps> = ({
 // ── Element Inspector ──
 interface ElementInspectorProps {
   element: CanvasElement;
+  canvasSize: CanvasSizePreset;
+  maxLayerZIndex: number;
   onUpdate: (updates: Partial<CanvasElement>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
-  onMoveLayer: (dir: "up" | "down" | "top" | "bottom") => void;
+  onMoveLayer: (id: string, dir: "up" | "down" | "top" | "bottom") => void;
   onStartTextEditing?: (id: string) => void;
 }
 
-export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onUpdate, onDelete, onDuplicate, onMoveLayer, onStartTextEditing }) => {
+export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, canvasSize, maxLayerZIndex, onUpdate, onDelete, onDuplicate, onMoveLayer, onStartTextEditing }) => {
   if (element.type === "text") {
     return (
       <TextPropertiesSidebar
         selectedText={element}
+        canvasSize={canvasSize}
+        maxLayerZIndex={maxLayerZIndex}
         onUpdate={(id, newProps) => {
           if (id === element.id) {
             onUpdate(newProps);
@@ -528,6 +536,7 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
         }}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
+        onMoveLayer={onMoveLayer}
         onStartCanvasEdit={onStartTextEditing}
       />
     );
@@ -537,6 +546,8 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
     return (
       <ImageAdjustmentSidebar
         selectedImage={element}
+        canvasSize={canvasSize}
+        maxLayerZIndex={maxLayerZIndex}
         onUpdate={(id, newProps) => {
           if (id === element.id) {
             onUpdate(newProps);
@@ -553,10 +564,10 @@ export const ElementInspector: React.FC<ElementInspectorProps> = ({ element, onU
   <div className="space-y-5 p-4">
     <div className="flex items-center gap-0.5 flex-wrap">
       <ActionButton onClick={onDuplicate} title="Duplicate" icon={<Copy size={14} strokeWidth={1.5} />} />
-      <ActionButton onClick={() => onMoveLayer("up")} title="Move up" icon={<ArrowUp size={14} strokeWidth={1.5} />} />
-      <ActionButton onClick={() => onMoveLayer("down")} title="Move down" icon={<ArrowDown size={14} strokeWidth={1.5} />} />
-      <ActionButton onClick={() => onMoveLayer("top")} title="Bring to front" icon={<ChevronsUp size={14} strokeWidth={1.5} />} />
-      <ActionButton onClick={() => onMoveLayer("bottom")} title="Send to back" icon={<ChevronsDown size={14} strokeWidth={1.5} />} />
+      <ActionButton onClick={() => onMoveLayer(element.id, "up")} title="Move up" icon={<ArrowUp size={14} strokeWidth={1.5} />} />
+      <ActionButton onClick={() => onMoveLayer(element.id, "down")} title="Move down" icon={<ArrowDown size={14} strokeWidth={1.5} />} />
+      <ActionButton onClick={() => onMoveLayer(element.id, "top")} title="Bring to front" icon={<ChevronsUp size={14} strokeWidth={1.5} />} />
+      <ActionButton onClick={() => onMoveLayer(element.id, "bottom")} title="Send to back" icon={<ChevronsDown size={14} strokeWidth={1.5} />} />
       <div className="flex-1" />
       <button
         onClick={onDelete}

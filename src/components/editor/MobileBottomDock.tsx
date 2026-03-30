@@ -34,6 +34,7 @@ import type {
   DrawSettings,
   BlendModeOption,
   LayerEffectPreset,
+  LayerEffectProps,
 } from "./EditorShell";
 import { ToolbarSidePanel } from "./ToolbarSidePanel";
 import { DesignInspector } from "./Inspector";
@@ -188,6 +189,30 @@ const compactButtonClass =
   "rounded-xl border border-border bg-white px-3 py-2 text-sm text-foreground transition hover:bg-accent";
 const compactToggleClass =
   "flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2";
+const defaultEffectProps: LayerEffectProps = {
+  preset: "none",
+  glowColor: "#38bdf8",
+  glowIntensity: 18,
+  shadowColor: "#0f172a",
+  shadowBlur: 18,
+  shadowOffsetX: 0,
+  shadowOffsetY: 10,
+  shadowOpacity: 0.28,
+  glassBlur: 18,
+  glassOpacity: 0.18,
+  strokeColor: "#ffffff",
+  strokeWidth: 0,
+  blendMode: "normal",
+  pulseSpeed: 1,
+};
+type ImageAdjustmentKey =
+  | "brightness"
+  | "contrast"
+  | "vibrance"
+  | "saturation"
+  | "hueRotate"
+  | "blur"
+  | "invert";
 
 const numberValue = (value: number | undefined, fallback = 0) =>
   Number.isFinite(value) ? Number(value) : fallback;
@@ -563,22 +588,7 @@ const ImageEffectsPanel: React.FC<{
   layer: CanvasElement;
   onUpdate: (updates: Partial<CanvasElement>) => void;
 }> = ({ layer, onUpdate }) => {
-  const effectProps = layer.effectProps || {
-    preset: "none" as LayerEffectPreset,
-    glowColor: "#38bdf8",
-    glowIntensity: 18,
-    shadowColor: "#0f172a",
-    shadowBlur: 18,
-    shadowOffsetX: 0,
-    shadowOffsetY: 10,
-    shadowOpacity: 0.28,
-    glassBlur: 18,
-    glassOpacity: 0.18,
-    strokeColor: "#ffffff",
-    strokeWidth: 0,
-    blendMode: "normal" as BlendModeOption,
-    pulseSpeed: 1,
-  };
+  const effectProps = layer.effectProps || defaultEffectProps;
 
   const updateEffect = (partial: Partial<typeof effectProps>) =>
     onUpdate({
@@ -705,13 +715,13 @@ const ImageAdjustmentsPanel: React.FC<{
       { key: "hueRotate", label: "Hue Rotate", min: 0, max: 360, fallback: 0 },
       { key: "blur", label: "Blur", min: 0, max: 40, fallback: 0 },
       { key: "invert", label: "Invert", min: 0, max: 100, fallback: 0 },
-    ].map((item) => (
+    ].map((item: { key: ImageAdjustmentKey; label: string; min: number; max: number; fallback: number }) => (
       <FieldRow key={item.key} label={item.label}>
         <input
           type="range"
           min={item.min}
           max={item.max}
-          value={numberValue((layer as any)[item.key], item.fallback)}
+          value={numberValue(layer[item.key], item.fallback)}
           onChange={(event) =>
             onUpdate({ [item.key]: Number(event.target.value) } as Partial<CanvasElement>)
           }
@@ -725,7 +735,7 @@ const ImageAdjustmentsPanel: React.FC<{
         onChange={(event) =>
           onUpdate({
             effectProps: {
-              ...(layer.effectProps || {}),
+              ...(layer.effectProps || defaultEffectProps),
               blendMode: event.target.value as BlendModeOption,
             },
           })
@@ -1133,6 +1143,13 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
       setAddToolView("list");
     }
   }, [openTab]);
+
+  React.useEffect(() => {
+    if (activeTool === "select" && openTab === "add" && addToolView === "tool") {
+      setAddToolView("list");
+      setOpenTab(null);
+    }
+  }, [activeTool, addToolView, openTab]);
 
   React.useEffect(() => {
     if (!requestedTab) return;

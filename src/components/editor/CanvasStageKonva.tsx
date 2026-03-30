@@ -243,6 +243,10 @@ function getMinimumScaleFactor(width: number, height: number) {
   return Math.max(MIN_TRANSFORM_SIZE / Math.max(1, width), MIN_TRANSFORM_SIZE / Math.max(1, height));
 }
 
+function isLayerLocked(element: CanvasElement | null | undefined) {
+  return Boolean(element?.locked);
+}
+
 function getImageTransformPreviewBounds(
   session: TransformSession,
   pointer: ViewportPoint,
@@ -951,13 +955,14 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
   const stampCircleBrush = useCallback(
     (context: CanvasRenderingContext2D, point: { x: number; y: number }, erase: boolean) => {
-      const radius = Math.max(1, drawSettings.brushSize / 2);
+      const radius = Math.max(4, drawSettings.brushSize * 0.7);
       context.save();
       context.globalCompositeOperation = erase ? "destination-out" : "source-over";
-      context.fillStyle = drawSettings.color;
+      context.strokeStyle = drawSettings.color;
+      context.lineWidth = Math.max(1.5, drawSettings.brushSize * 0.18);
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
-      context.fill();
+      context.stroke();
       context.restore();
     },
     [drawSettings.brushSize, drawSettings.color],
@@ -1445,18 +1450,22 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     clearDrawingCanvas();
   }, [clearDrawingCanvas, isDrawMode]);
 
+  const commitDrawing = useCallback(() => {
+    const canvas = drawingCanvasRef.current;
+    const dataUrl = canvas && hasDrawingRef.current ? canvas.toDataURL("image/png") : null;
+
+    clearDrawingCanvas();
+    onDrawingCommitted?.(dataUrl);
+  }, [clearDrawingCanvas, onDrawingCommitted]);
+
   useEffect(() => {
     if (!finishDrawingRequest || handledFinishRequestRef.current === finishDrawingRequest) {
       return;
     }
 
     handledFinishRequestRef.current = finishDrawingRequest;
-    const canvas = drawingCanvasRef.current;
-    const dataUrl = canvas && hasDrawingRef.current ? canvas.toDataURL("image/png") : null;
-
-    clearDrawingCanvas();
-    onDrawingCommitted?.(dataUrl);
-  }, [clearDrawingCanvas, finishDrawingRequest, onDrawingCommitted]);
+    commitDrawing();
+  }, [commitDrawing, finishDrawingRequest]);
 
   // Re-position the inline editor when zoom changes (but not on every elements change)
   useEffect(() => {
@@ -1486,11 +1495,12 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     elements
       .filter((element) => element.visible !== false)
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
-      .forEach((element) => {
+      .forEach((element, index) => {
       const shape = createKonvaShape(element);
       if (!shape) return;
 
       layer.add(shape as Konva.Shape | Konva.Group);
+      shape.zIndex(index);
       shapeRefs.current.set(element.id, shape);
 
       shape.on(
@@ -1841,7 +1851,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       }
     });
 
-    layer.draw();
+    transformer.moveToTop();
+    layer.batchDraw();
   }, [
     canvasSize,
     clearAlignmentGuides,
@@ -1878,13 +1889,14 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     const isSingleSelectedText = Boolean(
       selectedElement && selectedElement.type === "text" && !isInlineEditingActive,
     );
+    const isLockedSelection = isLayerLocked(selectedElement);
     const selectedTextNode = selectedElementId
       ? shapeRefs.current.get(selectedElementId)
       : null;
 
     transformer.shouldOverdrawWholeArea(false);
 
-    if (selectedElementIds.length > 0 && !isInlineEditingActive) {
+    if (selectedElementIds.length > 0 && !isInlineEditingActive && !isLockedSelection) {
       const selectedNodes = selectedElementIds
         .map((id) => shapeRefs.current.get(id))
         .filter(Boolean) as Konva.Node[];
@@ -1895,7 +1907,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     }
 
     transformer.enabledAnchors([
-      ...(isSingleSelectedText ? TEXT_TRANSFORM_ANCHORS : DEFAULT_TRANSFORM_ANCHORS),
+      ...(isLockedSelection
+        ? []
+        : isSingleSelectedText
+        ? TEXT_TRANSFORM_ANCHORS
+        : DEFAULT_TRANSFORM_ANCHORS),
     ]);
 
     const transformerBack = transformer.findOne(".back");
@@ -1905,6 +1921,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     if (
       transformerBack &&
       isSingleSelectedText &&
+      !isLockedSelection &&
       selectedElement?.type === "text" &&
       selectedTextNode instanceof Konva.Text
     ) {
@@ -1923,7 +1940,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
     transformer.forceUpdate();
     layer.draw();
-  }, [elements, inlineEditor?.id, selectedElementIds, stageActivateEvent, startInlineEditingByElementId]);
+  }, [elements, inlineEditor?.id, selectedElementIds, stageActivateEvent, stageDoubleActivateEvent, startInlineEditingByElementId]);
 
   useEffect(() => {
     if (!alignmentGuides) {
@@ -2298,12 +2315,18 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!isDrawMode) return;
 
+      const shouldCommit = isMobileViewport && hasDrawingRef.current;
+
       event.preventDefault();
       event.stopPropagation();
       isDrawingRef.current = false;
       lastDrawPointRef.current = null;
+
+      if (shouldCommit) {
+        commitDrawing();
+      }
     },
-    [isDrawMode],
+    [commitDrawing, isDrawMode, isMobileViewport],
   );
 
   const showTransparentPreview = canvasBackground === "transparent";
@@ -2678,10 +2701,11 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
           : 1,
       scaleX: renderable.scale ?? 1,
       scaleY: renderable.scale ?? 1,
-      draggable: true,
+      draggable: !renderable.locked,
     };
 
     if (renderable.type === "text") {
+      const effect = renderable.effectProps;
       const fontSize = renderable.fontSize || 24;
       const singleLine = !textContent.includes("\n");
       const intrinsicWidth = singleLine
@@ -2696,6 +2720,17 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
         fontSize,
       );
       const textNodeHeight = Math.max(renderable.height || 0, measured.height);
+      const usesGlow = effect?.preset === "neon-glow" || effect?.preset === "pulse";
+      const usesShadow = usesGlow || effect?.preset === "drop-shadow" || (effect?.shadowBlur ?? 0) > 0;
+      const shadowColor = usesGlow
+        ? effect?.glowColor || "#38bdf8"
+        : effect?.shadowColor || "#0f172a";
+      const shadowBlur = usesGlow
+        ? Math.max(4, effect?.glowIntensity ?? 18)
+        : Math.max(0, effect?.shadowBlur ?? 0);
+      const shadowOffsetX = usesGlow ? 0 : effect?.shadowOffsetX ?? 0;
+      const shadowOffsetY = usesGlow ? 0 : effect?.shadowOffsetY ?? 0;
+      const shadowOpacity = usesGlow ? 1 : effect?.shadowOpacity ?? 0.28;
 
       return new Konva.Text({
         ...baseConfig,
@@ -2716,6 +2751,16 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
           renderable.textDecoration && renderable.textDecoration !== "none"
             ? renderable.textDecoration
             : undefined,
+        stroke:
+          (effect?.strokeWidth ?? 0) > 0
+            ? effect?.strokeColor || "#ffffff"
+            : undefined,
+        strokeWidth: effect?.strokeWidth ?? 0,
+        shadowColor: usesShadow ? shadowColor : undefined,
+        shadowBlur: usesShadow ? shadowBlur : 0,
+        shadowOffsetX,
+        shadowOffsetY,
+        shadowOpacity: usesShadow ? shadowOpacity : 0,
         wrap: "word",
         hitFunc: (context, shape) => {
           context.beginPath();

@@ -13,14 +13,17 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import type { CanvasElement, LayerEffectProps } from "./EditorShell";
+import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
+import { PositionSidebar } from "./PositionSidebar";
 
 interface ImageAdjustmentSidebarProps {
   selectedImage: CanvasElement;
+  canvasSize: CanvasSizePreset;
+  maxLayerZIndex: number;
   onUpdate: (id: string, updates: Partial<CanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onMoveLayer: (dir: "up" | "down" | "top" | "bottom") => void;
+  onMoveLayer: (id: string, dir: "up" | "down" | "top" | "bottom") => void;
 }
 
 const defaultEffects: LayerEffectProps = {
@@ -214,16 +217,23 @@ const SelectRow: React.FC<{
 
 export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
   selectedImage,
+  canvasSize,
+  maxLayerZIndex,
   onUpdate,
   onDuplicate,
   onDelete,
   onMoveLayer,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [isAiProcessing, setIsAiProcessing] = React.useState(false);
   const [isMobileViewport, setIsMobileViewport] = React.useState(false);
   const effect = normalizeEffectProps(selectedImage);
   const activePhase = selectedImage.animationProps?.activePhase ?? "end";
+
+  React.useEffect(() => {
+    setActivePanel("main");
+  }, [selectedImage.id]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -283,6 +293,19 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
     }, 1800);
   };
 
+  if (activePanel === "position") {
+    return (
+      <PositionSidebar
+        layer={selectedImage}
+        canvasSize={canvasSize}
+        maxLayerZIndex={maxLayerZIndex}
+        onUpdate={updateImage}
+        onMoveLayer={onMoveLayer}
+        onBack={() => setActivePanel("main")}
+      />
+    );
+  }
+
   return (
     <div className="bg-white px-3 pb-5 pt-2 text-[#1f2937]">
       <input
@@ -294,7 +317,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
       />
 
       <div className="grid grid-cols-4 gap-2">
-        <ActionButton icon={<Move size={13} />} label="Position" onClick={() => onMoveLayer("top")} />
+        <ActionButton icon={<Move size={13} />} label="Position" onClick={() => setActivePanel("position")} />
         <ActionButton icon={<Copy size={13} />} label="Duplicate" onClick={onDuplicate} />
         <ActionButton
           icon={<Copy size={13} />}
@@ -536,7 +559,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
         </div>
       </Section>
 
-      <Section title="Interactivity">
+      {/* <Section title="Interactivity">
         <div className="space-y-2.5">
           <div className={ROW_LABEL}>Link</div>
           <div className="relative">
@@ -551,7 +574,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
           </div>
    
         </div>
-      </Section>
+      </Section> */}
     </div>
   );
 };
