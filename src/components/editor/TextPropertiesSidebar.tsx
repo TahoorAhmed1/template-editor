@@ -846,7 +846,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
                           onClick={() => applyShadowOption(option.value)}
                           className={`flex w-full items-center justify-between rounded-[10px] px-3 py-3 text-left text-[12px] transition ${
                             isSelected
-                              ? "bg-[#eaf6fd] text-[#0b5d8d]"
+                              ? "bg-[#7650e3] text-white"
                               : "text-[#2f3742] hover:bg-[#f7f9fb]"
                           }`}
                         >
