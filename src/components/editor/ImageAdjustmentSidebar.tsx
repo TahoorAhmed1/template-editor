@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
-import { PositionSidebar } from "./PositionSidebar";
+import { ArrangementControls, LockInPlaceControl, PositionSidebar } from "./PositionSidebar";
 
 interface ImageAdjustmentSidebarProps {
   selectedImage: CanvasElement;
@@ -31,10 +31,10 @@ const defaultEffects: LayerEffectProps = {
   glowColor: "#38bdf8",
   glowIntensity: 18,
   shadowColor: "#0f172a",
-  shadowBlur: 18,
+  shadowBlur: 0,
   shadowOffsetX: 0,
-  shadowOffsetY: 10,
-  shadowOpacity: 0.28,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
   glassBlur: 18,
   glassOpacity: 0.18,
   strokeColor: "#ffffff",
@@ -228,6 +228,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
   const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [isAiProcessing, setIsAiProcessing] = React.useState(false);
   const [isMobileViewport, setIsMobileViewport] = React.useState(false);
+  const isLocked = Boolean(selectedImage.locked);
   const effect = normalizeEffectProps(selectedImage);
   const activePhase = selectedImage.animationProps?.activePhase ?? "end";
 
@@ -298,9 +299,7 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
       <PositionSidebar
         layer={selectedImage}
         canvasSize={canvasSize}
-        maxLayerZIndex={maxLayerZIndex}
         onUpdate={updateImage}
-        onMoveLayer={onMoveLayer}
         onBack={() => setActivePanel("main")}
       />
     );
@@ -347,7 +346,34 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
         <ActionButton icon={<Trash2 size={13} />} label="Delete" onClick={onDelete} tone="danger" />
       </div>
 
-      <Section title="Opacity" divider={false}>
+      <Section title="Arrangement" divider={false}>
+        <div className="space-y-3">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <ArrangementControls
+                layer={selectedImage}
+                maxLayerZIndex={maxLayerZIndex}
+                onMoveLayer={onMoveLayer}
+              />
+            </div>
+            <LockInPlaceControl
+              locked={isLocked}
+              onToggle={() => updateImage({ locked: !isLocked })}
+            />
+          </div>
+          <ToggleSwitch
+            label="Preserve Ratio"
+            checked={Boolean(selectedImage.preserveAspectRatio)}
+            onToggle={() =>
+              updateImage({
+                preserveAspectRatio: !selectedImage.preserveAspectRatio,
+              })
+            }
+          />
+        </div>
+      </Section>
+
+      <Section title="Opacity">
         <PrecisionControl
           title=""
           value={selectedImage.opacity ?? 100}
@@ -472,10 +498,23 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
             onToggle={() =>
               updateImage({
                 roundnessEnabled: !selectedImage.roundnessEnabled,
-                borderRadius: !selectedImage.roundnessEnabled ? 999 : 0,
+                borderRadius: !selectedImage.roundnessEnabled
+                  ? Math.max(32, selectedImage.borderRadius ?? 0)
+                  : 0,
               })
             }
           />
+          {selectedImage.roundnessEnabled ? (
+            <PrecisionControl
+              title="Radius"
+              value={selectedImage.borderRadius ?? 32}
+              min={0}
+              max={200}
+              step={1}
+              onChange={(value) => updateImage({ borderRadius: value })}
+              isMobileViewport={isMobileViewport}
+            />
+          ) : null}
           <ToggleSwitch
             label="Black & White"
             checked={Boolean(selectedImage.blackAndWhite)}

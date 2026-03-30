@@ -72,6 +72,7 @@ type TransformSession = {
   activeAnchor: string | null;
   originalElement: CanvasElement;
   isCornerHandle: boolean;
+  preserveAspectRatio: boolean;
   originalBounds: GuideBounds;
   startPointer: ViewportPoint | null;
   aspectRatio: number;
@@ -248,6 +249,54 @@ function isLayerLocked(element: CanvasElement | null | undefined) {
   return Boolean(element?.locked);
 }
 
+function getScaledImageBounds(
+  session: TransformSession,
+  scaleFactor: number,
+): GuideBounds {
+  const { originalBounds, activeAnchor } = session;
+  const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width * scaleFactor));
+  const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height * scaleFactor));
+
+  if (activeAnchor === "middle-right") {
+    return {
+      x: originalBounds.x,
+      y: originalBounds.y + (originalBounds.height - height) / 2,
+      width,
+      height,
+    };
+  }
+
+  if (activeAnchor === "middle-left") {
+    return {
+      x: originalBounds.x + (originalBounds.width - width),
+      y: originalBounds.y + (originalBounds.height - height) / 2,
+      width,
+      height,
+    };
+  }
+
+  if (activeAnchor === "bottom-center") {
+    return {
+      x: originalBounds.x + (originalBounds.width - width) / 2,
+      y: originalBounds.y,
+      width,
+      height,
+    };
+  }
+
+  if (activeAnchor === "top-center") {
+    return {
+      x: originalBounds.x + (originalBounds.width - width) / 2,
+      y: originalBounds.y + (originalBounds.height - height),
+      width,
+      height,
+    };
+  }
+
+  const fixedCorner = getOppositeCorner(originalBounds, activeAnchor);
+  return getAnchoredBoxFromCorner(activeAnchor, fixedCorner, width, height);
+}
+
 function getImageTransformPreviewBounds(
   session: TransformSession,
   pointer: ViewportPoint,
@@ -259,6 +308,44 @@ function getImageTransformPreviewBounds(
 
   const deltaX = pointer.x - startPointer.x;
   const deltaY = pointer.y - startPointer.y;
+
+  if (session.preserveAspectRatio) {
+    if (activeAnchor === "middle-right") {
+      const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width + deltaX));
+      return getScaledImageBounds(session, width / Math.max(1, originalBounds.width));
+    }
+
+    if (activeAnchor === "middle-left") {
+      const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width - deltaX));
+      return getScaledImageBounds(session, width / Math.max(1, originalBounds.width));
+    }
+
+    if (activeAnchor === "bottom-center") {
+      const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height + deltaY));
+      return getScaledImageBounds(session, height / Math.max(1, originalBounds.height));
+    }
+
+    if (activeAnchor === "top-center") {
+      const height = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.height - deltaY));
+      return getScaledImageBounds(session, height / Math.max(1, originalBounds.height));
+    }
+
+    const widthDirection = activeAnchor?.includes("left") ? -1 : 1;
+    const heightDirection = activeAnchor?.startsWith("top") ? -1 : 1;
+    const normalizedDeltaX = (deltaX * widthDirection) / Math.max(1, originalBounds.width);
+    const normalizedDeltaY = (deltaY * heightDirection) / Math.max(1, originalBounds.height);
+    const dominantDelta =
+      Math.abs(normalizedDeltaX) >= Math.abs(normalizedDeltaY)
+        ? normalizedDeltaX
+        : normalizedDeltaY;
+
+    const scaleFactor = Math.max(
+      getMinimumScaleFactor(originalBounds.width, originalBounds.height),
+      1 + dominantDelta,
+    );
+
+    return getScaledImageBounds(session, scaleFactor);
+  }
 
   if (activeAnchor === "middle-right") {
     const width = Math.max(MIN_TRANSFORM_SIZE, Math.round(originalBounds.width + deltaX));
@@ -411,26 +498,68 @@ function getStableImageTransformBounds(
   session: TransformSession,
   rawBounds: GuideBounds,
 ): GuideBounds {
-  const scaleFactor = Math.max(
-    rawBounds.width / Math.max(1, session.originalBounds.width),
-    rawBounds.height / Math.max(1, session.originalBounds.height),
-  );
-  const nextWidth = Math.max(
-    MIN_TRANSFORM_SIZE,
-    Math.round(session.originalElement.width * scaleFactor),
-  );
-  const nextHeight = Math.max(
-    MIN_TRANSFORM_SIZE,
-    Math.round(session.originalElement.height * scaleFactor),
-  );
-  const fixedCorner = getOppositeCorner(session.originalBounds, session.activeAnchor);
+  if (session.preserveAspectRatio) {
+    const scaleFactor =
+      session.activeAnchor === "middle-right" || session.activeAnchor === "middle-left"
+        ? rawBounds.width / Math.max(1, session.originalBounds.width)
+        : session.activeAnchor === "top-center" || session.activeAnchor === "bottom-center"
+        ? rawBounds.height / Math.max(1, session.originalBounds.height)
+        : Math.max(
+            rawBounds.width / Math.max(1, session.originalBounds.width),
+            rawBounds.height / Math.max(1, session.originalBounds.height),
+          );
 
-  return getAnchoredBoxFromCorner(
-    session.activeAnchor,
-    fixedCorner,
-    nextWidth,
-    nextHeight,
-  );
+    return getScaledImageBounds(
+      session,
+      Math.max(getMinimumScaleFactor(session.originalBounds.width, session.originalBounds.height), scaleFactor),
+    );
+  }
+
+  const nextWidth = Math.max(MIN_TRANSFORM_SIZE, Math.round(rawBounds.width));
+  const nextHeight = Math.max(MIN_TRANSFORM_SIZE, Math.round(rawBounds.height));
+
+  if (session.activeAnchor === "middle-right") {
+    return {
+      x: session.originalBounds.x,
+      y: session.originalBounds.y,
+      width: nextWidth,
+      height: session.originalBounds.height,
+    };
+  }
+
+  if (session.activeAnchor === "middle-left") {
+    return {
+      x: session.originalBounds.x + (session.originalBounds.width - nextWidth),
+      y: session.originalBounds.y,
+      width: nextWidth,
+      height: session.originalBounds.height,
+    };
+  }
+
+  if (session.activeAnchor === "bottom-center") {
+    return {
+      x: session.originalBounds.x,
+      y: session.originalBounds.y,
+      width: session.originalBounds.width,
+      height: nextHeight,
+    };
+  }
+
+  if (session.activeAnchor === "top-center") {
+    return {
+      x: session.originalBounds.x,
+      y: session.originalBounds.y + (session.originalBounds.height - nextHeight),
+      width: session.originalBounds.width,
+      height: nextHeight,
+    };
+  }
+
+  return {
+    x: rawBounds.x,
+    y: rawBounds.y,
+    width: nextWidth,
+    height: nextHeight,
+  };
 }
 
 function getElementGuideBounds(element: CanvasElement): GuideBounds {
@@ -770,9 +899,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const transformPreviewFrameRef = useRef<number | null>(null);
   const pendingTransformPreviewRef = useRef<{ id: string; updates: Partial<CanvasElement> } | null>(null);
   const lastPreviewSyncAtRef = useRef(0);
+  const overlayRestoreTimeoutsRef = useRef<Map<string, number>>(new Map());
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
   const elementsRef = useRef(elements);
   const selectedElementIdsRef = useRef(selectedElementIds);
+  const hiddenOverlayElementIdsRef = useRef<string[]>([]);
   const textInputRef = useRef<HTMLDivElement>(null);
   const isDrawingRef = useRef(false);
   const lastDrawPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -787,6 +918,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     null,
   );
   const [editingText, setEditingText] = useState("");
+  const [hiddenOverlayElementIds, setHiddenOverlayElementIds] = useState<string[]>([]);
   const [pulseProgress, setPulseProgress] = useState(0);
   const [mobilePan, setMobilePan] = useState<ViewportPoint>({ x: 0, y: 0 });
 
@@ -797,6 +929,40 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   useEffect(() => {
     selectedElementIdsRef.current = selectedElementIds;
   }, [selectedElementIds]);
+
+  useEffect(() => {
+    hiddenOverlayElementIdsRef.current = hiddenOverlayElementIds;
+  }, [hiddenOverlayElementIds]);
+
+  const clearOverlayRestoreTimeout = useCallback((elementId: string) => {
+    const timeoutId = overlayRestoreTimeoutsRef.current.get(elementId);
+    if (timeoutId == null) return;
+
+    window.clearTimeout(timeoutId);
+    overlayRestoreTimeoutsRef.current.delete(elementId);
+  }, []);
+
+  const scheduleOverlayRestore = useCallback((elementId: string) => {
+    clearOverlayRestoreTimeout(elementId);
+
+    const timeoutId = window.setTimeout(() => {
+      overlayRestoreTimeoutsRef.current.delete(elementId);
+      setHiddenOverlayElementIds((current) =>
+        current.includes(elementId)
+          ? current.filter((id) => id !== elementId)
+          : current,
+      );
+    }, 34);
+
+    overlayRestoreTimeoutsRef.current.set(elementId, timeoutId);
+  }, [clearOverlayRestoreTimeout]);
+
+  useEffect(() => () => {
+    overlayRestoreTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    overlayRestoreTimeoutsRef.current.clear();
+  }, []);
 
   const scale = zoom / 100;
   const isDrawMode = activeTool === "draw";
@@ -1556,7 +1722,10 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       .filter((element) => element.visible !== false)
       .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
       .forEach((element, index) => {
-      const shape = createKonvaShape(element);
+      const shape = createKonvaShape(
+        element,
+        hiddenOverlayElementIdsRef.current.includes(element.id),
+      );
       if (!shape) return;
 
       layer.add(shape as Konva.Shape | Konva.Group);
@@ -1641,12 +1810,22 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         const transformerInstance = transformerRef.current;
         const activeAnchor = transformerInstance?.getActiveAnchor() ?? null;
         const isCornerHandle = isCornerAnchor(activeAnchor);
+        const preserveAspectRatio =
+          element.type === "image"
+            ? Boolean(element.preserveAspectRatio)
+            : isCornerHandle;
         const motion = getActiveAnimationState(element);
+
+        clearOverlayRestoreTimeout(element.id);
+        setHiddenOverlayElementIds((current) =>
+          current.includes(element.id) ? current : [...current, element.id],
+        );
 
         transformSessionRef.current = {
           activeAnchor,
           originalElement: element,
           isCornerHandle,
+          preserveAspectRatio,
           originalBounds: {
             x: element.x + motion.x,
             y: element.y + motion.y,
@@ -1658,7 +1837,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         };
 
         lastPreviewSyncAtRef.current = 0;
-        transformerInstance?.keepRatio(isCornerHandle);
+        transformerInstance?.keepRatio(preserveAspectRatio);
         if (shouldShowTransformGhost(element)) {
           drawTransformGhost(getNodeGuideBounds(shape, element.width, element.height));
         } else {
@@ -1904,6 +2083,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           rotation: Math.round(shape.rotation() || 0),
         });
 
+        scheduleOverlayRestore(element.id);
+
         if (inlineEditor?.id === element.id && shape instanceof Konva.Text) {
           setInlineEditor(getInlineEditorState(element, shape));
         }
@@ -1939,6 +2120,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     onClearPreviewElement,
     scheduleTransformPreview,
     getCanvasPointerPosition,
+    clearOverlayRestoreTimeout,
+    scheduleOverlayRestore,
     stageActivateEvent,
     stageDoubleActivateEvent,
     stagePressEvent,
@@ -1950,6 +2133,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     if (!layer || !transformer) return;
 
     const isInlineEditingActive = Boolean(inlineEditor?.id);
+    const hiddenOverlayIds = new Set(hiddenOverlayElementIds);
     const selectedElementId = selectedElementIds.length === 1 ? selectedElementIds[0] : null;
     const selectedElement = selectedElementId
       ? elements.find((element) => element.id === selectedElementId) ?? null
@@ -1961,6 +2145,19 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     const selectedTextNode = selectedElementId
       ? shapeRefs.current.get(selectedElementId)
       : null;
+
+    elements.forEach((element) => {
+      const shape = shapeRefs.current.get(element.id);
+      if (!shape) return;
+
+      const useDomOverlay = shouldUseDomEffectOverlay(element);
+      const overlayHidden = hiddenOverlayIds.has(element.id);
+      const nextOpacity = element.opacity != null
+        ? (useDomOverlay && !overlayHidden ? 0.01 : element.opacity / 100)
+        : 1;
+
+      shape.opacity(nextOpacity);
+    });
 
     transformer.shouldOverdrawWholeArea(false);
 
@@ -2008,7 +2205,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
     transformer.forceUpdate();
     layer.draw();
-  }, [elements, inlineEditor?.id, selectedElementIds, stageActivateEvent, stageDoubleActivateEvent, startInlineEditingByElementId]);
+  }, [elements, hiddenOverlayElementIds, inlineEditor?.id, selectedElementIds, stageActivateEvent, stageDoubleActivateEvent, startInlineEditingByElementId]);
 
   useEffect(() => {
     if (!alignmentGuides) {
@@ -2149,6 +2346,17 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     const resolvedAutoEditElementId = requestedTextEditId ?? autoEditElementId;
 
     if (!resolvedAutoEditElementId || inlineEditorRef.current) return;
+
+    const targetElement = elements.find((element) => element.id === resolvedAutoEditElementId) ?? null;
+
+    if (!targetElement || targetElement.type !== "text") {
+      if (requestedTextEditId === resolvedAutoEditElementId) {
+        consumeTextEditRequest(textEditRequestKey);
+      } else {
+        onAutoEditHandled?.(resolvedAutoEditElementId);
+      }
+      return;
+    }
 
     if (!startInlineEditingByElementId(resolvedAutoEditElementId)) return;
 
@@ -2632,6 +2840,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         elements={elements}
         scale={scale}
         editingLayerId={inlineEditor?.id}
+        hiddenElementIds={hiddenOverlayElementIds}
         pulseProgress={pulseProgress}
         isMobile={isMobileViewport}
       />
@@ -2784,7 +2993,7 @@ function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps
 
 export const CanvasStage = React.memo(CanvasStageComponent, areCanvasStagePropsEqual);
 
-function createKonvaShape(element: CanvasElement): Konva.Node | null {
+function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.Node | null {
   try {
     const renderable = getRenderableLayer(element);
     const useDomOverlay = shouldUseDomEffectOverlay(element);
@@ -2799,7 +3008,7 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
       rotation: renderable.rotation || 0,
       opacity:
         renderable.opacity != null
-          ? (useDomOverlay ? 0.01 : renderable.opacity / 100)
+          ? (useDomOverlay && !overlayHidden ? 0.01 : renderable.opacity / 100)
           : 1,
       scaleX: renderable.scale ?? 1,
       scaleY: renderable.scale ?? 1,
@@ -2832,7 +3041,7 @@ function createKonvaShape(element: CanvasElement): Konva.Node | null {
         : Math.max(0, effect?.shadowBlur ?? 0);
       const shadowOffsetX = usesGlow ? 0 : effect?.shadowOffsetX ?? 0;
       const shadowOffsetY = usesGlow ? 0 : effect?.shadowOffsetY ?? 0;
-      const shadowOpacity = usesGlow ? 1 : effect?.shadowOpacity ?? 0.28;
+      const shadowOpacity = usesGlow ? 1 : effect?.shadowOpacity ?? 0;
 
       return new Konva.Text({
         ...baseConfig,

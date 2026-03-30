@@ -1,13 +1,11 @@
 import React from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset } from "./EditorShell";
 
 interface PositionSidebarProps {
   layer: CanvasElement;
   canvasSize: CanvasSizePreset;
-  maxLayerZIndex: number;
   onUpdate: (updates: Partial<CanvasElement>) => void;
-  onMoveLayer: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
   onBack: () => void;
 }
 
@@ -105,6 +103,72 @@ const ArrangeButton: React.FC<{
   </button>
 );
 
+interface ArrangementControlsProps {
+  layer: CanvasElement;
+  maxLayerZIndex: number;
+  onMoveLayer: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
+}
+
+export const ArrangementControls: React.FC<ArrangementControlsProps> = ({
+  layer,
+  maxLayerZIndex,
+  onMoveLayer,
+}) => {
+  const locked = Boolean(layer.locked);
+  const isAtBottom = (layer.zIndex ?? 1) <= 1;
+  const isAtTop = (layer.zIndex ?? 1) >= Math.max(1, maxLayerZIndex);
+
+  return (
+    <div className="grid grid-cols-4 gap-x-[6px]">
+      <ArrangeButton
+        label="To Botto..."
+        action="bottom"
+        onClick={() => onMoveLayer(layer.id, "bottom")}
+        disabled={isAtBottom || locked}
+      />
+      <ArrangeButton
+        label="Backward"
+        action="backward"
+        onClick={() => onMoveLayer(layer.id, "down")}
+        disabled={isAtBottom || locked}
+      />
+      <ArrangeButton
+        label="Forward"
+        action="forward"
+        onClick={() => onMoveLayer(layer.id, "up")}
+        disabled={locked || isAtTop}
+      />
+      <ArrangeButton
+        label="To Top"
+        action="top"
+        onClick={() => onMoveLayer(layer.id, "top")}
+        disabled={locked || isAtTop}
+      />
+    </div>
+  );
+};
+
+interface LockInPlaceControlProps {
+  locked: boolean;
+  onToggle: () => void;
+}
+
+export const LockInPlaceControl: React.FC<LockInPlaceControlProps> = ({
+  locked,
+  onToggle,
+}) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    aria-pressed={locked}
+    aria-label={locked ? "Unlock layer" : "Lock layer"}
+    title={locked ? "Unlock layer" : "Lock layer"}
+    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] border transition ${locked ? "border-[#B9C7EA] bg-[#E8F0FF] text-[#1D4ED8]" : "border-[#D8DCE5] bg-[#F8FAFD] text-[#6B7280] hover:bg-[#F1F5F9]"}`}
+  >
+    <Lock size={16} strokeWidth={1.8} />
+  </button>
+);
+
 const AlignmentGlyph: React.FC<{ action: AlignmentAction }> = ({ action }) => {
   const verticalClass =
     action === "left"
@@ -164,15 +228,11 @@ const AlignmentButton: React.FC<{
 export const PositionSidebar: React.FC<PositionSidebarProps> = ({
   layer,
   canvasSize,
-  maxLayerZIndex,
   onUpdate,
-  onMoveLayer,
   onBack,
 }) => {
   const locked = Boolean(layer.locked);
   const visualBounds = getVisualBounds(layer);
-  const isAtBottom = (layer.zIndex ?? 1) <= 1;
-  const isAtTop = (layer.zIndex ?? 1) >= Math.max(1, maxLayerZIndex);
 
   const handleAlign = (action: AlignmentAction) => {
     if (locked) {
@@ -239,48 +299,7 @@ export const PositionSidebar: React.FC<PositionSidebarProps> = ({
       </div>
 
       <div className="space-y-0 px-[14px] pb-5 pt-3">
-        <div className="grid grid-cols-4 gap-x-[6px] pb-5">
-          <ArrangeButton
-            label="To Botto..."
-            action="bottom"
-            onClick={() => onMoveLayer(layer.id, "bottom")}
-            disabled={isAtBottom || locked}
-          />
-          <ArrangeButton
-            label="Backward"
-            action="backward"
-            onClick={() => onMoveLayer(layer.id, "down")}
-            disabled={isAtBottom || locked}
-          />
-          <ArrangeButton
-            label="Forward"
-            action="forward"
-            onClick={() => onMoveLayer(layer.id, "up")}
-            disabled={locked || isAtTop}
-          />
-          <ArrangeButton
-            label="To Top"
-            action="top"
-            onClick={() => onMoveLayer(layer.id, "top")}
-            disabled={locked || isAtTop}
-          />
-        </div>
-
-        <div className="flex items-center justify-between border-b border-[#E5E7ED] pb-[14px]">
-          <span className="text-[13px] font-normal text-[#4D5870]">Lock in Place</span>
-          <button
-            type="button"
-            onClick={() => onUpdate({ locked: !locked })}
-            aria-pressed={locked}
-            className={`relative flex h-[30px] w-[60px] items-center rounded-full border transition ${locked ? "border-[#B9C7EA] bg-[#E8F0FF]" : "border-[#D8DCE5] bg-[#F3F4F7]"}`}
-          >
-            <span
-              className={`h-[24px] w-[24px] rounded-full border border-[#D6D9E0] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.12)] transition-transform ${locked ? "translate-x-[32px]" : "translate-x-[3px]"}`}
-            />
-          </button>
-        </div>
-
-        <div className="border-b border-[#D6DBE6] pb-[7px] pt-[14px]">
+        <div className="border-b border-[#D6DBE6] pb-[7px] pt-[4px]">
           <div className="text-[15px] font-medium text-[#1F3764]">
             Alignment on Design
           </div>

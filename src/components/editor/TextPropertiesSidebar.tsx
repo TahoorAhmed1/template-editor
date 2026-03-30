@@ -18,7 +18,7 @@ import {
   Type,
 } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
-import { PositionSidebar } from "./PositionSidebar";
+import { ArrangementControls, LockInPlaceControl, PositionSidebar } from "./PositionSidebar";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 
 interface TextPropertiesSidebarProps {
@@ -49,10 +49,10 @@ const defaultEffects: LayerEffectProps = {
   glowColor: "#38bdf8",
   glowIntensity: 18,
   shadowColor: "#0f172a",
-  shadowBlur: 18,
+  shadowBlur: 0,
   shadowOffsetX: 0,
-  shadowOffsetY: 10,
-  shadowOpacity: 0.28,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
   glassBlur: 18,
   glassOpacity: 0.18,
   strokeColor: "#ffffff",
@@ -495,9 +495,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
       <PositionSidebar
         layer={selectedText}
         canvasSize={canvasSize}
-        maxLayerZIndex={maxLayerZIndex}
         onUpdate={updateText}
-        onMoveLayer={onMoveLayer}
         onBack={() => setActivePanel("main")}
       />
     );
@@ -530,7 +528,23 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
         />
       </div>
 
-      <Section title="Text" divider={false}>
+      <Section title="Arrangement" divider={false}>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <ArrangementControls
+              layer={selectedText}
+              maxLayerZIndex={maxLayerZIndex}
+              onMoveLayer={onMoveLayer}
+            />
+          </div>
+          <LockInPlaceControl
+            locked={isLocked}
+            onToggle={() => updateText({ locked: !isLocked })}
+          />
+        </div>
+      </Section>
+
+      <Section title="Text">
         <div className="space-y-2 py-2">
           <textarea
             value={selectedText.content || ""}

@@ -203,10 +203,10 @@ const defaultEffectProps: LayerEffectProps = {
   glowColor: "#38bdf8",
   glowIntensity: 18,
   shadowColor: "#0f172a",
-  shadowBlur: 18,
+  shadowBlur: 0,
   shadowOffsetX: 0,
-  shadowOffsetY: 10,
-  shadowOpacity: 0.28,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
   glassBlur: 18,
   glassOpacity: 0.18,
   strokeColor: "#ffffff",
@@ -834,8 +834,27 @@ const ImageAdjustmentsPanel: React.FC<{
     <ToggleRow
       label="Roundness"
       checked={Boolean(layer.roundnessEnabled)}
-      onChange={(checked) => onUpdate({ roundnessEnabled: checked })}
+      onChange={(checked) =>
+        onUpdate({
+          roundnessEnabled: checked,
+          borderRadius: checked ? Math.max(32, layer.borderRadius ?? 0) : 0,
+        })
+      }
     />
+    {layer.roundnessEnabled ? (
+      <FieldRow label="Radius">
+        <input
+          type="range"
+          min="0"
+          max="200"
+          value={numberValue(layer.borderRadius, 32)}
+          onChange={(event) =>
+            onUpdate({ borderRadius: Number(event.target.value) })
+          }
+          className="w-36"
+        />
+      </FieldRow>
+    ) : null}
   </div>
 );
 
@@ -1098,6 +1117,13 @@ const ArrangePanel: React.FC<{
           className="w-36"
         />
       </FieldRow>
+      {layer.type === "image" ? (
+        <ToggleRow
+          label="Preserve Ratio"
+          checked={Boolean(layer.preserveAspectRatio)}
+          onChange={(checked) => onUpdate({ preserveAspectRatio: checked })}
+        />
+      ) : null}
     </div>
 
     <LinkField

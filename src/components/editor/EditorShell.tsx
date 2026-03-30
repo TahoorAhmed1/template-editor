@@ -115,6 +115,7 @@ export interface CanvasElement {
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
+  preserveAspectRatio?: boolean;
   rotation?: number;
   scale?: number;
   locked?: boolean;
@@ -216,10 +217,10 @@ const createDefaultEffectProps = (): LayerEffectProps => ({
   glowColor: "#38bdf8",
   glowIntensity: 18,
   shadowColor: "#0f172a",
-  shadowBlur: 18,
+  shadowBlur: 0,
   shadowOffsetX: 0,
-  shadowOffsetY: 10,
-  shadowOpacity: 0.28,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
   glassBlur: 18,
   glassOpacity: 0.18,
   strokeColor: "#ffffff",
@@ -471,6 +472,7 @@ const normalizeTemplateElement = (
       borderColor: getOptionalString(rawElement.borderColor),
       borderWidth: getOptionalNumber(rawElement.borderWidth),
       borderRadius: getOptionalNumber(rawElement.borderRadius),
+      preserveAspectRatio: rawElement.preserveAspectRatio === true ? true : undefined,
       rotation: getOptionalNumber(rawElement.rotation),
       scale: getOptionalNumber(rawElement.scale),
       locked: lockedIds.has(id),
@@ -874,9 +876,11 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setSelectedLayerId(newElementId);
       if (element.type === "text") {
         requestTextEdit(newElementId);
+      } else {
+        clearTextEditRequest();
       }
     },
-    [canvasSize, pushHistory, requestTextEdit],
+    [canvasSize, clearTextEditRequest, pushHistory, requestTextEdit],
   );
 
   const handleAutoEditHandled = useCallback((_id: string) => {

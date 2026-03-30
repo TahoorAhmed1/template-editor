@@ -6,6 +6,7 @@ interface LayerEffectOverlayProps {
   elements: CanvasElement[];
   scale: number;
   editingLayerId?: string | null;
+  hiddenElementIds?: string[];
   pulseProgress: number;
   isMobile: boolean;
 }
@@ -118,8 +119,12 @@ const getImageClipPath = (element: CanvasElement) => {
 };
 
 const getImageBorderRadius = (element: CanvasElement, scale: number) => {
-  if (element.roundnessEnabled || element.maskShape === "circle") {
+  if (element.maskShape === "circle") {
     return "999px";
+  }
+
+  if (element.roundnessEnabled) {
+    return `${Math.max(12, (element.borderRadius || 32) * scale)}px`;
   }
 
   if (element.maskShape === "rounded") {
@@ -193,14 +198,18 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
   elements,
   scale,
   editingLayerId,
+  hiddenElementIds = [],
   pulseProgress,
   isMobile,
 }) => {
+  const hiddenIds = new Set(hiddenElementIds);
+
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {elements
         .filter((element) => element.visible !== false)
         .filter((element) => element.id !== editingLayerId)
+        .filter((element) => !hiddenIds.has(element.id))
         .filter(shouldUseDomEffectOverlay)
         .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
         .map((element) => {

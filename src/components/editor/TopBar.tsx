@@ -32,7 +32,7 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
     return (
       <header className="flex h-14 items-center justify-between px-3 bg-[#7650e3] shrink-0 z-20">
         <div className="flex items-center gap-2">
-          <button onClick={onBack} className="rounded-md p-2 text-primary-foreground hover:bg-[#7650e3]-foreground/10 transition-colors">
+          <button onClick={onBack} className="hidden rounded-md p-2 text-primary-foreground hover:bg-[#7650e3]-foreground/10 transition-colors">
             <ArrowLeft size={18} strokeWidth={1.5} className="text-primary-foreground" />
           </button>
           <button
@@ -73,13 +73,13 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
   return (
     <header className="h-[52px] flex items-center justify-between px-4 bg-[#7650e3] shrink-0 z-20">
       <div className="flex items-center gap-2">
-        <button onClick={onBack} className="p-2 rounded-md hover:bg-[#7650e3]-foreground/10 transition-colors duration-100">
+        <button onClick={onBack} className="hidden p-2 rounded-md hover:bg-[#7650e3]-foreground/10 transition-colors duration-100">
           <ArrowLeft size={18} strokeWidth={1.5} className="text-primary-foreground" />
         </button>
 
-        <div className="h-5 w-px bg-[#7650e3]-foreground/20 mx-1" />
+        <div className="hidden h-5 w-px bg-[#7650e3]-foreground/20 mx-1" />
 
-        <button className="text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100">
+        <button className="hidden text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100">
           File
         </button>
         {/* <button className="text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100" onClick={onDownload}>
@@ -88,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
         <button className="text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100" onClick={onResize}>
           Resize
         </button>
-        <button className="text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100" onClick={onAI}>
+        <button className="hidden text-[13px] font-medium text-primary-foreground/90 hover:bg-[#7650e3]-foreground/10 px-3 py-1.5 rounded-md transition-colors duration-100" onClick={onAI}>
           AI Writer
         </button>
 
@@ -111,9 +111,9 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="p-2 rounded-md hover:bg-[#7650e3]-foreground/10 transition-colors duration-100">
+        {/* <button className="p-2 rounded-md hover:bg-[#7650e3]-foreground/10 transition-colors duration-100">
           <HelpCircle size={18} strokeWidth={1.5} className="text-primary-foreground/70" />
-        </button>
+        </button> */}
 
 
         <button className="inline-flex items-center gap-1.5 border border-[#7650e3]-foreground/20 hover:bg-[#7650e3]-foreground/10 text-primary-foreground text-[13px] font-medium px-4 py-2 rounded-md transition-colors duration-100">
@@ -121,10 +121,10 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
           Save
         </button>
 
-        <button className="inline-flex items-center gap-1.5 border border-[#7650e3]-foreground/20 hover:bg-[#7650e3]-foreground/10 text-primary-foreground text-[13px] font-medium px-4 py-2 rounded-md transition-colors duration-100">
+        {/* <button className="inline-flex items-center gap-1.5 border border-[#7650e3]-foreground/20 hover:bg-[#7650e3]-foreground/10 text-primary-foreground text-[13px] font-medium px-4 py-2 rounded-md transition-colors duration-100">
           <Share2 size={15} strokeWidth={1.5} />
           Share
-        </button>
+        </button> */}
 
 
       </div>

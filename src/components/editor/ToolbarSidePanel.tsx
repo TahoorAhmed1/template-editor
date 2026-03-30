@@ -1,15 +1,55 @@
 import React, { useRef, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  Activity,
+  Airplay,
+  AlarmClock,
+  Anchor,
+  Aperture,
+  Archive,
+  Atom,
+  Award,
+  BadgeCheck,
+  Bell,
+  Bike,
+  Bolt,
+  BookOpen,
+  Bookmark,
+  Bot,
+  Briefcase,
+  Bug,
+  CakeSlice,
+  Camera,
+  Candy,
+  Car,
+  Cherry,
+  Cloud,
+  Clover,
+  Compass,
+  Cpu,
+  Crown,
+  Diamond,
+  Feather,
+  Flag,
+  Flame,
+  Flower2,
   Search,
   Plus,
   Square,
   Circle,
   Triangle,
-  Minus,
-  Star,
-  Hexagon,
+  Gift,
+  Globe,
+  Hammer,
   Heart,
-  Pen,
+  Minus,
+  KeyRound,
+  Leaf,
+  Lightbulb,
+  Lock,
+  Medal,
+  MoonStar,
+  Mountain,
   Type,
   Bold,
   Italic,
@@ -23,10 +63,25 @@ import {
   UploadCloud,
   Shapes,
   Palette,
+  Pizza,
+  Plane,
+  Puzzle,
+  Rocket,
+  Shield,
+  Star,
+  Sun,
   Columns3,
   Table2,
+  Telescope,
+  ThumbsUp,
+  TreePine,
+  Trophy,
+  Umbrella,
+  Waves,
+  Zap,
   Captions,
   List,
+  type LucideIcon,
 } from "lucide-react";
 import type { ToolType, CanvasElement, EditorMode, CanvasSizePreset, DrawSettings } from "./EditorShell";
 import { API } from "@/services/api";
@@ -197,6 +252,95 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     {children}
   </p>
 );
+
+type ShapeAsset = {
+  label: string;
+  icon: LucideIcon;
+  color: string;
+};
+
+const SHAPE_ASSETS: ShapeAsset[] = [
+  { label: "Activity", icon: Activity, color: "#2563eb" },
+  { label: "Airplay", icon: Airplay, color: "#0f766e" },
+  { label: "Alarm", icon: AlarmClock, color: "#9333ea" },
+  { label: "Anchor", icon: Anchor, color: "#0f766e" },
+  { label: "Aperture", icon: Aperture, color: "#dc2626" },
+  { label: "Archive", icon: Archive, color: "#475569" },
+  { label: "Atom", icon: Atom, color: "#7c3aed" },
+  { label: "Award", icon: Award, color: "#ca8a04" },
+  { label: "Badge", icon: BadgeCheck, color: "#059669" },
+  { label: "Bell", icon: Bell, color: "#2563eb" },
+  { label: "Bike", icon: Bike, color: "#ea580c" },
+  { label: "Bolt", icon: Bolt, color: "#ca8a04" },
+  { label: "Book", icon: BookOpen, color: "#1d4ed8" },
+  { label: "Bookmark", icon: Bookmark, color: "#7c2d12" },
+  { label: "Bot", icon: Bot, color: "#0f766e" },
+  { label: "Briefcase", icon: Briefcase, color: "#334155" },
+  { label: "Bug", icon: Bug, color: "#15803d" },
+  { label: "Cake", icon: CakeSlice, color: "#db2777" },
+  { label: "Camera", icon: Camera, color: "#0369a1" },
+  { label: "Candy", icon: Candy, color: "#c026d3" },
+  { label: "Car", icon: Car, color: "#0f766e" },
+  { label: "Cherry", icon: Cherry, color: "#dc2626" },
+  { label: "Cloud", icon: Cloud, color: "#0284c7" },
+  { label: "Clover", icon: Clover, color: "#16a34a" },
+  { label: "Compass", icon: Compass, color: "#7c3aed" },
+  { label: "CPU", icon: Cpu, color: "#475569" },
+  { label: "Crown", icon: Crown, color: "#ca8a04" },
+  { label: "Diamond", icon: Diamond, color: "#0891b2" },
+  { label: "Feather", icon: Feather, color: "#0284c7" },
+  { label: "Flag", icon: Flag, color: "#dc2626" },
+  { label: "Flame", icon: Flame, color: "#ea580c" },
+  { label: "Flower", icon: Flower2, color: "#db2777" },
+  { label: "Gift", icon: Gift, color: "#7c3aed" },
+  { label: "Globe", icon: Globe, color: "#0369a1" },
+  { label: "Hammer", icon: Hammer, color: "#92400e" },
+  { label: "Heart", icon: Heart, color: "#e11d48" },
+  { label: "Key", icon: KeyRound, color: "#ca8a04" },
+  { label: "Leaf", icon: Leaf, color: "#16a34a" },
+  { label: "Bulb", icon: Lightbulb, color: "#ca8a04" },
+  { label: "Lock", icon: Lock, color: "#475569" },
+  { label: "Medal", icon: Medal, color: "#ca8a04" },
+  { label: "Moon", icon: MoonStar, color: "#4338ca" },
+  { label: "Mountain", icon: Mountain, color: "#0f766e" },
+  { label: "Palette", icon: Palette, color: "#7c3aed" },
+  { label: "Pizza", icon: Pizza, color: "#ea580c" },
+  { label: "Plane", icon: Plane, color: "#0284c7" },
+  { label: "Puzzle", icon: Puzzle, color: "#9333ea" },
+  { label: "Rocket", icon: Rocket, color: "#2563eb" },
+  { label: "Shield", icon: Shield, color: "#0f766e" },
+  { label: "Sparkles", icon: Sparkles, color: "#a21caf" },
+  { label: "Star", icon: Star, color: "#ca8a04" },
+  { label: "Sun", icon: Sun, color: "#d97706" },
+  { label: "Telescope", icon: Telescope, color: "#1d4ed8" },
+  { label: "Thumb", icon: ThumbsUp, color: "#2563eb" },
+  { label: "Pine", icon: TreePine, color: "#15803d" },
+  { label: "Trophy", icon: Trophy, color: "#ca8a04" },
+  { label: "Umbrella", icon: Umbrella, color: "#7c3aed" },
+  { label: "Waves", icon: Waves, color: "#0891b2" },
+  { label: "Zap", icon: Zap, color: "#eab308" },
+];
+
+const createShapeAssetDataUrl = (icon: LucideIcon, color: string) => {
+  const svg = renderToStaticMarkup(
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="256"
+      height="256"
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <rect width="24" height="24" fill="transparent" />
+      {React.createElement(icon, {
+        size: 24,
+        color,
+        strokeWidth: 1.8,
+      })}
+    </svg>,
+  );
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
 
 /* ---------- templates ---------- */
 
@@ -487,68 +631,77 @@ const MediaPanel: React.FC<{
     "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=400&h=300&fit=crop",
     "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=400&h=300&fit=crop",
   ];
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredImages = stockImages.filter((src) =>
+    normalizedSearch.length === 0 || src.toLowerCase().includes(normalizedSearch),
+  );
+  const filteredShapes = SHAPE_ASSETS.filter((shape) =>
+    normalizedSearch.length === 0 || shape.label.toLowerCase().includes(normalizedSearch),
+  );
 
   return (
     <div>
       <SearchBar
-        placeholder={mode === "video" ? "Search photos & videos" : "Search photos & icons"}
+        placeholder={mode === "video" ? "Search photos & videos" : "Search photos & shapes"}
         value={search}
         onChange={setSearch}
       />
 
       <SegmentedTabs
-        tabs={["photos", "icons"]}
+        tabs={["photos", "shapes"]}
         active={tab}
         onChange={setTab}
       />
 
-      {tab === "photos" ? (
-        <div className="grid grid-cols-2 gap-3">
-          {stockImages.map((src, i) => (
-            <button
-              key={i}
-              className="aspect-[4/3] overflow-hidden rounded-xl border border-[#e3e7ed] bg-white transition hover:shadow-sm"
-              onClick={() =>
-                onAddElement({
-                  type: "image",
-                  x: 100,
-                  y: 100,
-                  width: 300,
-                  height: 225,
-                  src,
-                })
-              }
-            >
-              <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-4 gap-3">
-          {[Square, Circle, Triangle, Star, Hexagon, Heart, Minus, Pen].map((Icon, i) => (
-            <button
-              key={i}
-              className="flex aspect-square items-center justify-center rounded-xl border border-[#e3e7ed] bg-white text-[#51627c] transition hover:bg-[#f7fafc]"
-              onClick={() =>
-                onAddElement({
-                  type: "shape",
-                  x: 180,
-                  y: 180,
-                  width: 140,
-                  height: 140,
-                  shapeType:
-                    i === 0 ? "rectangle" : i === 1 ? "circle" : i === 2 ? "triangle" : "rectangle",
-                  backgroundColor: "#2f80ed",
-                  borderWidth: 0,
-                  opacity: 100,
-                })
-              }
-            >
-              <Icon size={22} strokeWidth={1.6} />
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="h-[24rem] overflow-y-auto pr-1">
+        {tab === "photos" ? (
+          <div className="grid grid-cols-2 gap-3">
+            {filteredImages.map((src, i) => (
+              <button
+                key={i}
+                className="aspect-[4/3] overflow-hidden rounded-xl border border-[#e3e7ed] bg-white transition hover:shadow-sm"
+                onClick={() =>
+                  onAddElement({
+                    type: "image",
+                    x: 100,
+                    y: 100,
+                    width: 300,
+                    height: 225,
+                    src,
+                  })
+                }
+              >
+                <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {filteredShapes.map((shape) => (
+              <button
+                key={shape.label}
+                className="flex aspect-[4/3] flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-[#e3e7ed] bg-white px-3 py-4 text-[#51627c] transition hover:bg-[#f7fafc] hover:shadow-sm"
+                onClick={() =>
+                  onAddElement({
+                    type: "image",
+                    x: 120,
+                    y: 120,
+                    width: 180,
+                    height: 180,
+                    src: createShapeAssetDataUrl(shape.icon, shape.color),
+                    opacity: 100,
+                  })
+                }
+              >
+                <div className="flex h-full w-full items-center justify-center rounded-xl bg-[#f8fafc]">
+                  <shape.icon size={52} strokeWidth={1.8} color={shape.color} />
+                </div>
+                <span className="text-[12px] font-medium text-[#51627c]">{shape.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -258,12 +258,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <div className="overflow-y-auto p-4" style={{ maxHeight: floatingPosition.maxHeight }}>
                 <ToolbarSidePanel
                   activeTool={activeTool}
-                  onAddElement={onAddElement}
+                  onAddElement={(element) => {
+                    onAddElement(element);
+                    onCloseSidebar();
+                  }}
                   onApplyTemplate={(template) => {
                     onApplyTemplate(template);
                     onCloseSidebar();
                   }}
-                  onBackgroundChange={onBackgroundChange}
+                  onBackgroundChange={(background) => {
+                    onBackgroundChange(background);
+                    onCloseSidebar();
+                  }}
                   canvasBackground={canvasBackground}
                   canvasSize={canvasSize}
                   mode={mode}
