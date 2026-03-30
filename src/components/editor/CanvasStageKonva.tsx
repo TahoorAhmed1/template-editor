@@ -173,10 +173,18 @@ function getOppositeCorner(bounds: GuideBounds, activeAnchor: string | null): Vi
   switch (activeAnchor) {
     case "top-left":
       return { x: bounds.x + bounds.width, y: bounds.y + bounds.height };
+    case "top-center":
+      return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
     case "top-right":
       return { x: bounds.x, y: bounds.y + bounds.height };
+    case "middle-left":
+      return { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 };
+    case "middle-right":
+      return { x: bounds.x, y: bounds.y + bounds.height / 2 };
     case "bottom-left":
       return { x: bounds.x + bounds.width, y: bounds.y };
+    case "bottom-center":
+      return { x: bounds.x + bounds.width / 2, y: bounds.y };
     case "bottom-right":
     default:
       return { x: bounds.x, y: bounds.y };
@@ -197,6 +205,13 @@ function getAnchoredBoxFromCorner(
         width,
         height,
       };
+    case "top-center":
+      return {
+        x: fixedCorner.x - width / 2,
+        y: fixedCorner.y - height,
+        width,
+        height,
+      };
     case "top-right":
       return {
         x: fixedCorner.x,
@@ -204,9 +219,30 @@ function getAnchoredBoxFromCorner(
         width,
         height,
       };
+    case "middle-left":
+      return {
+        x: fixedCorner.x - width,
+        y: fixedCorner.y - height / 2,
+        width,
+        height,
+      };
+    case "middle-right":
+      return {
+        x: fixedCorner.x,
+        y: fixedCorner.y - height / 2,
+        width,
+        height,
+      };
     case "bottom-left":
       return {
         x: fixedCorner.x - width,
+        y: fixedCorner.y,
+        width,
+        height,
+      };
+    case "bottom-center":
+      return {
+        x: fixedCorner.x - width / 2,
         y: fixedCorner.y,
         width,
         height,
