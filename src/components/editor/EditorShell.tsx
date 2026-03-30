@@ -9,6 +9,7 @@ import { MobileBottomDock } from "./MobileBottomDock";
 import { LayersPanel } from "./LayersPanel";
 import { MobileLayerSheet, type MobileLayerSheetSection } from "./MobileLayerSheet";
 import { useTextEditStore } from "@/stores/useTextEditStore";
+import type { TemplateApplyPayload } from "./templateTypes";
 
 export type ToolType =
   | "uploads"
@@ -305,6 +306,192 @@ const clampInsertionCoordinate = (
 ) => {
   const maxCoordinate = Math.max(INSERTION_MARGIN, canvasSize - layerSize - INSERTION_MARGIN);
   return Math.min(maxCoordinate, Math.max(INSERTION_MARGIN, Math.round(value)));
+};
+
+const getOptionalNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+const getNumberOr = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const getOptionalString = (value: unknown) =>
+  typeof value === "string" ? value : undefined;
+
+const getTemplateOpacity = (value: unknown) => {
+  const numericValue = getOptionalNumber(value);
+  if (numericValue == null) {
+    return undefined;
+  }
+
+  return numericValue <= 1 ? Math.round(numericValue * 100) : numericValue;
+};
+
+const scaleTemplateValue = (value: number, ratio: number) =>
+  Math.round(value * ratio * 100) / 100;
+
+const getTemplateOriginMode = (value: unknown): "start" | "center" | "end" | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (["left", "top", "start"].includes(normalizedValue)) {
+    return "start";
+  }
+
+  if (["center", "middle"].includes(normalizedValue)) {
+    return "center";
+  }
+
+  if (["right", "bottom", "end"].includes(normalizedValue)) {
+    return "end";
+  }
+
+  return undefined;
+};
+
+const getTemplateCanvasSize = (
+  canvasDimensions: unknown,
+  fallbackCanvasSize: Pick<CanvasSizePreset, "width" | "height">,
+) => {
+  if (!canvasDimensions || typeof canvasDimensions !== "object") {
+    return fallbackCanvasSize;
+  }
+
+  const width = getOptionalNumber((canvasDimensions as Record<string, unknown>).width);
+  const height = getOptionalNumber((canvasDimensions as Record<string, unknown>).height);
+
+  return {
+    width: width && width > 0 ? width : fallbackCanvasSize.width,
+    height: height && height > 0 ? height : fallbackCanvasSize.height,
+  };
+};
+
+const normalizeTemplateAxis = (
+  position: number,
+  layerSize: number,
+  sourceCanvasSize: number,
+  scaleRatio: number,
+  origin: "start" | "center" | "end" | undefined,
+  preferCenteredCoordinates: boolean,
+) => {
+  const centeredPosition = position - layerSize / 2;
+  const endAlignedPosition = position - layerSize;
+
+  if (origin === "center") {
+    return scaleTemplateValue(centeredPosition, scaleRatio);
+  }
+
+  if (origin === "end") {
+    return scaleTemplateValue(endAlignedPosition, scaleRatio);
+  }
+
+  if (origin === "start") {
+    return scaleTemplateValue(position, scaleRatio);
+  }
+
+  const overflowMargin = Math.max(24, sourceCanvasSize * 0.05);
+  const fitsWithinCanvas = (candidate: number) =>
+    candidate >= -overflowMargin && candidate + layerSize <= sourceCanvasSize + overflowMargin;
+  const topLeftFits = fitsWithinCanvas(position);
+  const centeredFits = fitsWithinCanvas(centeredPosition);
+
+  if (preferCenteredCoordinates && centeredFits) {
+    return scaleTemplateValue(centeredPosition, scaleRatio);
+  }
+
+  if (!topLeftFits && centeredFits) {
+    return scaleTemplateValue(centeredPosition, scaleRatio);
+  }
+
+  return scaleTemplateValue(position, scaleRatio);
+};
+
+const normalizeTemplateElement = (
+  rawElement: Record<string, unknown>,
+  lockedIds: Set<string>,
+  index: number,
+  sourceCanvasSize: Pick<CanvasSizePreset, "width" | "height">,
+  targetCanvasSize: Pick<CanvasSizePreset, "width" | "height">,
+): CanvasElement | null => {
+  const id = getOptionalString(rawElement.id) ?? `template-${index + 1}`;
+  const rawType = getOptionalString(rawElement.type) ?? "image";
+  const nextType = rawType === "logo" ? "image" : rawType;
+
+  if (!(["text", "image", "shape", "video", "table"] as const).includes(nextType as CanvasElement["type"])) {
+    return null;
+  }
+
+  const textBackgroundOpacity = getNumberOr(rawElement.backgroundOpacity, 0);
+  const backgroundColor = getOptionalString(rawElement.backgroundColor);
+  const rawWidth = Math.max(1, getNumberOr(rawElement.width, 120));
+  const rawHeight = Math.max(1, getNumberOr(rawElement.height, 120));
+  const scaleX = targetCanvasSize.width / Math.max(1, sourceCanvasSize.width);
+  const scaleY = targetCanvasSize.height / Math.max(1, sourceCanvasSize.height);
+  const xOrigin = getTemplateOriginMode(rawElement.originX);
+  const yOrigin = getTemplateOriginMode(rawElement.originY);
+  const preferCenteredCoordinates = rawType === "logo";
+
+  return normalizeLayer(
+    {
+      id,
+      type: nextType as CanvasElement["type"],
+      x: normalizeTemplateAxis(
+        getNumberOr(rawElement.x, 0),
+        rawWidth,
+        sourceCanvasSize.width,
+        scaleX,
+        xOrigin,
+        preferCenteredCoordinates,
+      ),
+      y: normalizeTemplateAxis(
+        getNumberOr(rawElement.y, 0),
+        rawHeight,
+        sourceCanvasSize.height,
+        scaleY,
+        yOrigin,
+        preferCenteredCoordinates,
+      ),
+      width: Math.max(1, scaleTemplateValue(rawWidth, scaleX)),
+      height: Math.max(1, scaleTemplateValue(rawHeight, scaleY)),
+      content: getOptionalString(rawElement.content),
+      src: getOptionalString(rawElement.src),
+      fontSize: getOptionalNumber(rawElement.fontSize),
+      fontFamily: getOptionalString(rawElement.fontFamily),
+      fontWeight:
+        typeof rawElement.fontWeight === "string" || typeof rawElement.fontWeight === "number"
+          ? String(rawElement.fontWeight)
+          : undefined,
+      color: getOptionalString(rawElement.color),
+      backgroundColor: nextType === "shape" ? backgroundColor : undefined,
+      textBackgroundColor:
+        nextType === "text" && backgroundColor && textBackgroundOpacity > 0.05
+          ? backgroundColor
+          : undefined,
+      borderColor: getOptionalString(rawElement.borderColor),
+      borderWidth: getOptionalNumber(rawElement.borderWidth),
+      borderRadius: getOptionalNumber(rawElement.borderRadius),
+      rotation: getOptionalNumber(rawElement.rotation),
+      scale: getOptionalNumber(rawElement.scale),
+      locked: lockedIds.has(id),
+      opacity: getTemplateOpacity(rawElement.opacity),
+      visible: rawElement.visible === false ? false : undefined,
+      zIndex: getOptionalNumber(rawElement.zIndex) ?? index + 1,
+      textAlign: ["left", "center", "right", "justify"].includes(String(rawElement.textAlign))
+        ? (rawElement.textAlign as CanvasElement["textAlign"])
+        : undefined,
+      lineHeight: getOptionalNumber(rawElement.lineHeight),
+      letterSpacing: getOptionalNumber(rawElement.letterSpacing),
+      shapeType: ["rectangle", "circle", "triangle", "line"].includes(String(rawElement.shapeType))
+        ? (rawElement.shapeType as CanvasElement["shapeType"])
+        : undefined,
+      duration: getOptionalNumber(rawElement.duration),
+      rows: getOptionalNumber(rawElement.rows),
+      cols: getOptionalNumber(rawElement.cols),
+      tableData: Array.isArray(rawElement.tableData) ? (rawElement.tableData as string[][]) : undefined,
+    },
+    getOptionalNumber(rawElement.zIndex) ?? index + 1,
+  );
 };
 
 const getLayerBounds = ({ x, y, width, height }: LayerBounds): LayerBounds => ({
@@ -988,13 +1175,19 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
       if (
         resolvedTarget instanceof HTMLInputElement ||
-        resolvedTarget instanceof HTMLTextAreaElement
+        resolvedTarget instanceof HTMLTextAreaElement ||
+        resolvedTarget instanceof HTMLButtonElement ||
+        resolvedTarget instanceof HTMLSelectElement
       ) {
         return;
       }
 
       const element = resolvedTarget instanceof HTMLElement ? resolvedTarget : null;
-      if (element?.closest('[contenteditable="true"]')) {
+      if (
+        element?.closest(
+          'button, a, input, textarea, select, label, summary, [role="button"], [contenteditable="true"]',
+        )
+      ) {
         return;
       }
 
@@ -1060,6 +1253,36 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setCanvasSize(preset);
     },
     [canvasSize, pushHistory]
+  );
+
+  const handleApplyTemplate = useCallback(
+    (template: TemplateApplyPayload) => {
+      const lockedIds = new Set(template.json.lockedElementIds ?? []);
+      const rawElements = Array.isArray(template.json.elements) ? template.json.elements : [];
+      const sourceCanvasSize = getTemplateCanvasSize(template.json.canvasDimensions, canvasSize);
+      const normalizedElements = reindexLayers(
+        rawElements
+          .map((element, index) =>
+            normalizeTemplateElement(element, lockedIds, index, sourceCanvasSize, canvasSize),
+          )
+          .filter((element): element is CanvasElement => Boolean(element))
+          .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+      );
+      const nextBackground = template.json.canvasBackground || "#FFFFFF";
+
+      clearElementPreview();
+      setSelectedLayerId(null);
+      setDesignTitle(template.name);
+      setCanvasBackground(nextBackground);
+      setElements(normalizedElements);
+      pushHistory(normalizedElements, nextBackground);
+      setActiveTool("select");
+      setSidebarExpanded(false);
+      setMobileLayerSheetOpen(false);
+      setMobileLayerSheetLocked(false);
+      setRequestedMobileTab(null);
+    },
+    [canvasSize, clearElementPreview, pushHistory],
   );
 
   const handleDownload = useCallback((format: string) => {
@@ -1491,6 +1714,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           activeTool={activeTool}
           onToolClick={handleToolClick}
           onAddElement={addElement}
+          onApplyTemplate={handleApplyTemplate}
           onUpdateElement={updateElement}
           onDeleteElement={deleteElement}
           onDuplicateElement={duplicateElement}
@@ -1588,10 +1812,12 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           sidebarExpanded={sidebarExpanded}
           onCloseSidebar={() => setSidebarExpanded(false)}
           onAddElement={addElement}
+          onApplyTemplate={handleApplyTemplate}
           onBackgroundChange={handleBackgroundChange}
           canvasBackground={canvasBackground}
           mode={mode}
           onCanvasSizeChange={handleCanvasSizeChange}
+          canvasSize={canvasSize}
         />
 
         <CanvasStage

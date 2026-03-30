@@ -21,6 +21,7 @@ import type {
   CanvasSizePreset,
 } from "./EditorShell";
 import { ToolbarSidePanel } from "./ToolbarSidePanel";
+import type { TemplateApplyPayload } from "./templateTypes";
 
 interface ToolItem {
   id: ToolType;
@@ -31,7 +32,7 @@ interface ToolItem {
 
 const tools: ToolItem[] = [
   { id: "uploads", label: "My Uploads", icon: Upload, modes: ["image", "video"] },
-  { id: "templates", label: "Templates", icon: LayoutGrid, modes: ["image", "video"] },
+  // { id: "templates", label: "Templates", icon: LayoutGrid, modes: ["image", "video"] },
   { id: "media", label: "Media", icon: Images, modes: ["image", "video"] },
   { id: "text", label: "Text", icon: Type, modes: ["image", "video"] },
   { id: "ai", label: "AI", icon: Sparkles, modes: ["image", "video"] },
@@ -40,7 +41,7 @@ const tools: ToolItem[] = [
   // { id: "record", label: "Record", icon: CircleDot, modes: ["image", "video"] },
   { id: "draw", label: "Draw", icon: Paintbrush, modes: ["image", "video"] },
   // { id: "slideshow", label: "Slideshow", icon: PanelsTopLeft, modes: ["image", "video"] },
-  // { id: "qrcode", label: "QR Code", icon: QrCode, modes: ["image", "video"] },
+  { id: "qrcode", label: "QR Code", icon: QrCode, modes: ["image", "video"] },
 ];
 
 
@@ -51,10 +52,12 @@ interface ToolbarProps {
   onCloseSidebar: () => void;
   isMobile?: boolean;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
+  onApplyTemplate: (template: TemplateApplyPayload) => void;
   onBackgroundChange: (bg: string) => void;
   canvasBackground: string;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
+  canvasSize: CanvasSizePreset;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -64,15 +67,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onCloseSidebar,
   isMobile,
   onAddElement,
+  onApplyTemplate,
   onBackgroundChange,
   canvasBackground,
   mode,
   onCanvasSizeChange,
+  canvasSize,
 }) => {
   const filteredTools = tools.filter((t) => t.modes.includes(mode));
   const usesInspectorPanel = sidebarExpanded && activeTool === "draw";
 
-  const [panelHeight, setPanelHeight] = React.useState(560);
+  const [panelHeight, setPanelHeight] = React.useState<number | null>(null);
+  const [measuredTool, setMeasuredTool] = React.useState<ActiveTool | null>(null);
   const buttonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const [anchorRect, setAnchorRect] = React.useState<DOMRect | null>(null);
@@ -80,12 +86,40 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const VIEWPORT_MARGIN = 16;
 
   React.useLayoutEffect(() => {
-    if (!panelRef.current) return;
-    const nextHeight = panelRef.current.offsetHeight;
-    if (nextHeight && nextHeight !== panelHeight) {
-      setPanelHeight(nextHeight);
+    if (!sidebarExpanded || !activeTool || activeTool === "select" || usesInspectorPanel) {
+      setPanelHeight(null);
+      setMeasuredTool(null);
+      return;
     }
-  }, [activeTool, sidebarExpanded, panelHeight]);
+
+    const panelNode = panelRef.current;
+    if (!panelNode) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = panelNode.offsetHeight;
+      if (!nextHeight) {
+        return;
+      }
+
+      setPanelHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      setMeasuredTool(activeTool);
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(panelNode);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [activeTool, anchorRect, sidebarExpanded, usesInspectorPanel]);
 
   React.useEffect(() => {
     if (!activeTool || !sidebarExpanded) {
@@ -130,12 +164,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [usesInspectorPanel, sidebarExpanded, onCloseSidebar]);
 
-   const floatingPosition = React.useMemo(() => {
+  const isPanelMeasured = measuredTool === activeTool && panelHeight !== null;
+
+  const floatingPosition = React.useMemo(() => {
     if (!anchorRect || !sidebarExpanded || typeof window === "undefined") return null;
 
     const viewportHeight = window.innerHeight;
     const maxHeight = viewportHeight - VIEWPORT_MARGIN * 2;
-    const effectiveHeight = Math.min(panelHeight, maxHeight);
+    const estimatedHeight = panelHeight ?? Math.min(maxHeight, 420);
+    const effectiveHeight = Math.min(estimatedHeight, maxHeight);
 
     const anchorCenterY = anchorRect.top + anchorRect.height / 2;
     const rawTop = anchorCenterY - effectiveHeight / 2;
@@ -194,12 +231,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <AnimatePresence>
         {sidebarExpanded && activeTool !== "select" && !usesInspectorPanel && anchorRect && floatingPosition && (
           <motion.div
+            key={activeTool}
             ref={panelRef}
             className="fixed z-40 w-[320px]"
             style={{
               top: floatingPosition.top,
               left: floatingPosition.left,
               maxHeight: floatingPosition.maxHeight,
+              visibility: isPanelMeasured ? "visible" : "hidden",
+              pointerEvents: isPanelMeasured ? "auto" : "none",
             }}
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
@@ -219,8 +259,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <ToolbarSidePanel
                   activeTool={activeTool}
                   onAddElement={onAddElement}
+                  onApplyTemplate={(template) => {
+                    onApplyTemplate(template);
+                    onCloseSidebar();
+                  }}
                   onBackgroundChange={onBackgroundChange}
                   canvasBackground={canvasBackground}
+                  canvasSize={canvasSize}
                   mode={mode}
                   onCanvasSizeChange={onCanvasSizeChange}
                 />

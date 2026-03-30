@@ -29,6 +29,7 @@ import {
   List,
 } from "lucide-react";
 import type { ToolType, CanvasElement, EditorMode, CanvasSizePreset, DrawSettings } from "./EditorShell";
+import { API } from "@/services/api";
 import {
   BackgroundFlyout,
   DrawFlyout,
@@ -36,12 +37,15 @@ import {
   RecordFlyout,
   SlideshowFlyout,
 } from "./GlobalSidebarFlyouts";
+import type { TemplateApplyPayload, TemplateRecord } from "./templateTypes";
 
 interface ToolbarSidePanelProps {
   activeTool: ToolType;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
+  onApplyTemplate: (template: TemplateApplyPayload) => void;
   onBackgroundChange: (bg: string) => void;
   canvasBackground: string;
+  canvasSize: CanvasSizePreset;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
   drawSettings?: DrawSettings;
@@ -52,8 +56,10 @@ interface ToolbarSidePanelProps {
 export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
   activeTool,
   onAddElement,
+  onApplyTemplate,
   onBackgroundChange,
   canvasBackground,
+  canvasSize,
   mode,
   onCanvasSizeChange,
   drawSettings,
@@ -62,7 +68,7 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
 }) => {
   switch (activeTool) {
     case "templates":
-      return <TemplatesPanel />;
+      return <TemplatesPanel canvasSize={canvasSize} onApplyTemplate={onApplyTemplate} />;
     case "text":
       return <TextPanel onAddElement={onAddElement} />;
     case "media":
@@ -194,10 +200,81 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 /* ---------- templates ---------- */
 
-const TemplatesPanel: React.FC = () => {
+const isTemplateRecord = (value: unknown): value is TemplateRecord => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<TemplateRecord>;
+  return typeof candidate.id === "string" && typeof candidate.name === "string";
+};
+
+const getTemplateCategoryMatch = (template: TemplateRecord, category: string) => {
+  if (category === "all") {
+    return true;
+  }
+
+  return template.name.toLowerCase().includes(category.toLowerCase());
+};
+
+const TemplatesPanel: React.FC<{
+  canvasSize: CanvasSizePreset;
+  onApplyTemplate: (template: TemplateApplyPayload) => void;
+}> = ({ canvasSize, onApplyTemplate }) => {
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState("all");
+  const [templates, setTemplates] = useState<TemplateRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const categories = ["all", "business", "event", "social", "sale", "food"];
+  const dimension = `${canvasSize.width}x${canvasSize.height}`;
+
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const loadTemplates = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await API.listGlobalTemplates(dimension);
+        const payload = response?.data;
+        const nextTemplates = (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [])
+          .filter(isTemplateRecord);
+
+        if (isMounted) {
+          setTemplates(nextTemplates);
+        }
+      } catch {
+        if (isMounted) {
+          setError("Unable to load templates.");
+          setTemplates([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadTemplates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dimension]);
+
+  const filteredTemplates = React.useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return templates.filter((template) => {
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        template.name.toLowerCase().includes(normalizedSearch);
+
+      return matchesSearch && getTemplateCategoryMatch(template, activeCat);
+    });
+  }, [activeCat, search, templates]);
 
   return (
     <div>
@@ -222,18 +299,66 @@ const TemplatesPanel: React.FC = () => {
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <button
-            key={i}
-            className="aspect-[3/4] overflow-hidden rounded-xl border border-[#e3e7ed] bg-gradient-to-br from-[#eef2f7] to-[#dde6ef] transition hover:shadow-sm"
-          >
-            <div className="flex h-full items-center justify-center text-[12px] font-medium text-[#667085]">
-              Template {i + 1}
+      {error ? (
+        <div className="rounded-xl border border-[#f1d2d2] bg-[#fff7f7] px-3 py-4 text-[12px] text-[#b54747]">
+          {error}
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-[3/4] animate-pulse overflow-hidden rounded-xl border border-[#e3e7ed] bg-[#f2f4f7]"
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {filteredTemplates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() =>
+                onApplyTemplate({
+                  name: template.name,
+                  dimension: template.dimension,
+                  json: template.json,
+                })
+              }
+              className="group aspect-[3/4] overflow-hidden rounded-xl border border-[#e3e7ed] bg-white text-left transition hover:border-[#cdd8e5] hover:shadow-sm"
+            >
+              <div className="flex h-full flex-col">
+                <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-[#eef2f7] to-[#dde6ef]">
+                  {template.json.thumbnailDataUrl ? (
+                    <img
+                      src={template.json.thumbnailDataUrl}
+                      alt={template.name}
+                      className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-3 text-center text-[12px] font-medium text-[#667085]">
+                      {template.name}
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-[#edf1f5] px-3 py-2.5">
+                  <div className="truncate text-[12px] font-semibold text-[#243b63]">{template.name}</div>
+                  <div className="mt-0.5 text-[11px] text-[#7b8798]">{template.dimension || dimension}</div>
+                </div>
+              </div>
+            </button>
+          ))}
+
+          {!filteredTemplates.length && !error ? (
+            <div className="col-span-2 rounded-xl border border-dashed border-[#d7dde6] px-3 py-8 text-center text-[12px] text-[#7b8798]">
+              No templates found.
             </div>
-          </button>
-        ))}
-      </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 };

@@ -38,6 +38,7 @@ import type {
 } from "./EditorShell";
 import { ToolbarSidePanel } from "./ToolbarSidePanel";
 import { DesignInspector } from "./Inspector";
+import type { TemplateApplyPayload } from "./templateTypes";
 
 type DockTab =
   | "add"
@@ -69,6 +70,7 @@ interface MobileBottomDockProps {
 
   onToolClick: (tool: ToolType) => void;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
+  onApplyTemplate: (template: TemplateApplyPayload) => void;
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
@@ -105,13 +107,13 @@ const tools: ToolItem[] = [
     description: "Add from My Uploads, Google Drive, and more",
     modes: ["image", "video"],
   },
-  {
-    id: "templates",
-    label: "Templates",
-    icon: LayoutGrid,
-    description: "Explore templates for your design",
-    modes: ["image", "video"],
-  },
+  // {
+  //   id: "templates",
+  //   label: "Templates",
+  //   icon: LayoutGrid,
+  //   description: "Explore templates for your design",
+  //   modes: ["image", "video"],
+  // },
   {
     id: "media",
     label: "Media",
@@ -1088,6 +1090,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   drawSettings,
   onToolClick,
   onAddElement,
+  onApplyTemplate,
   onUpdateElement,
   onDeleteElement,
   onDuplicateElement,
@@ -1491,8 +1494,14 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                     setOpenTab(null);
                     setAddToolView("list");
                   }}
+                  onApplyTemplate={(template) => {
+                    onApplyTemplate(template);
+                    setOpenTab(null);
+                    setAddToolView("list");
+                  }}
                   onBackgroundChange={onBackgroundChange}
                   canvasBackground={canvasBackground}
+                  canvasSize={canvasSize}
                   mode={mode}
                   onCanvasSizeChange={onCanvasSizeChange}
                   drawSettings={drawSettings}
