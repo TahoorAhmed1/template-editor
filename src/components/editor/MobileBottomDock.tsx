@@ -1,4 +1,3 @@
-
 import React from "react";
 import {
   Plus,
@@ -24,6 +23,7 @@ import {
   ArrowDown,
   ChevronsUp,
   ChevronsDown,
+  QrCode,
 } from "lucide-react";
 import type {
   ToolType,
@@ -76,7 +76,7 @@ interface MobileBottomDockProps {
   onDuplicateElement: (id: string) => void;
   onMoveLayer: (
     id: string,
-    direction: "up" | "down" | "top" | "bottom",
+    direction: "up" | "down" | "top" | "bottom"
   ) => void;
   onBackgroundChange: (bg: string) => void;
   onDesignTitleChange: (title: string) => void;
@@ -149,6 +149,13 @@ const tools: ToolItem[] = [
     description: "Set solid, gradient, or image backgrounds",
     modes: ["image", "video"],
   },
+  {
+    id: "qrcode",
+    label: "QR Code",
+    icon: QrCode,
+    description: "Generate a QR code for your design",
+    modes: ["image", "video"],
+  },
 ];
 
 const designTabs = [
@@ -219,7 +226,9 @@ type ImageAdjustmentKey =
 const numberValue = (value: number | undefined, fallback = 0) =>
   Number.isFinite(value) ? Number(value) : fallback;
 
-const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const SectionTitle: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => (
   <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
     {children}
   </div>
@@ -317,31 +326,51 @@ const LayerActions: React.FC<{
   <div className="space-y-3">
     <SectionTitle>Layer Actions</SectionTitle>
     <div className="grid grid-cols-3 gap-2">
-      <button type="button" onClick={onDuplicate} className={compactButtonClass}>
+      <button
+        type="button"
+        onClick={onDuplicate}
+        className={compactButtonClass}
+      >
         <span className="inline-flex items-center gap-2">
           <Copy size={14} />
           Duplicate
         </span>
       </button>
-      <button type="button" onClick={() => onMoveLayer("up")} className={compactButtonClass}>
+      <button
+        type="button"
+        onClick={() => onMoveLayer("up")}
+        className={compactButtonClass}
+      >
         <span className="inline-flex items-center gap-2">
           <ArrowUp size={14} />
           Up
         </span>
       </button>
-      <button type="button" onClick={() => onMoveLayer("down")} className={compactButtonClass}>
+      <button
+        type="button"
+        onClick={() => onMoveLayer("down")}
+        className={compactButtonClass}
+      >
         <span className="inline-flex items-center gap-2">
           <ArrowDown size={14} />
           Down
         </span>
       </button>
-      <button type="button" onClick={() => onMoveLayer("top")} className={compactButtonClass}>
+      <button
+        type="button"
+        onClick={() => onMoveLayer("top")}
+        className={compactButtonClass}
+      >
         <span className="inline-flex items-center gap-2">
           <ChevronsUp size={14} />
           Front
         </span>
       </button>
-      <button type="button" onClick={() => onMoveLayer("bottom")} className={compactButtonClass}>
+      <button
+        type="button"
+        onClick={() => onMoveLayer("bottom")}
+        className={compactButtonClass}
+      >
         <span className="inline-flex items-center gap-2">
           <ChevronsDown size={14} />
           Back
@@ -489,7 +518,9 @@ const TextStylePanel: React.FC<{
       <input
         type="color"
         value={layer.textBackgroundColor || "#ffffff"}
-        onChange={(event) => onUpdate({ textBackgroundColor: event.target.value })}
+        onChange={(event) =>
+          onUpdate({ textBackgroundColor: event.target.value })
+        }
         className="h-9 w-10 rounded-lg border border-border"
       />
     </FieldRow>
@@ -498,8 +529,8 @@ const TextStylePanel: React.FC<{
         value={layer.textVerticalAlign || "top"}
         onChange={(event) =>
           onUpdate({
-            textVerticalAlign:
-              event.target.value as CanvasElement["textVerticalAlign"],
+            textVerticalAlign: event.target
+              .value as CanvasElement["textVerticalAlign"],
           })
         }
         className={compactInputClass}
@@ -515,7 +546,9 @@ const TextStylePanel: React.FC<{
         step="0.1"
         min="0.8"
         value={layer.lineHeight || 1.2}
-        onChange={(event) => onUpdate({ lineHeight: Number(event.target.value) })}
+        onChange={(event) =>
+          onUpdate({ lineHeight: Number(event.target.value) })
+        }
         className={compactNumberClass}
       />
     </FieldRow>
@@ -710,27 +743,49 @@ const ImageAdjustmentsPanel: React.FC<{
   <div className="space-y-4">
     <SectionTitle>Adjustments</SectionTitle>
     {[
-      { key: "brightness", label: "Brightness", min: 0, max: 200, fallback: 100 },
+      {
+        key: "brightness",
+        label: "Brightness",
+        min: 0,
+        max: 200,
+        fallback: 100,
+      },
       { key: "contrast", label: "Contrast", min: 0, max: 200, fallback: 100 },
       { key: "vibrance", label: "Vibrance", min: 0, max: 200, fallback: 100 },
-      { key: "saturation", label: "Saturation", min: 0, max: 200, fallback: 100 },
+      {
+        key: "saturation",
+        label: "Saturation",
+        min: 0,
+        max: 200,
+        fallback: 100,
+      },
       { key: "hueRotate", label: "Hue Rotate", min: 0, max: 360, fallback: 0 },
       { key: "blur", label: "Blur", min: 0, max: 40, fallback: 0 },
       { key: "invert", label: "Invert", min: 0, max: 100, fallback: 0 },
-    ].map((item: { key: ImageAdjustmentKey; label: string; min: number; max: number; fallback: number }) => (
-      <FieldRow key={item.key} label={item.label}>
-        <input
-          type="range"
-          min={item.min}
-          max={item.max}
-          value={numberValue(layer[item.key], item.fallback)}
-          onChange={(event) =>
-            onUpdate({ [item.key]: Number(event.target.value) } as Partial<CanvasElement>)
-          }
-          className="w-36"
-        />
-      </FieldRow>
-    ))}
+    ].map(
+      (item: {
+        key: ImageAdjustmentKey;
+        label: string;
+        min: number;
+        max: number;
+        fallback: number;
+      }) => (
+        <FieldRow key={item.key} label={item.label}>
+          <input
+            type="range"
+            min={item.min}
+            max={item.max}
+            value={numberValue(layer[item.key], item.fallback)}
+            onChange={(event) =>
+              onUpdate({
+                [item.key]: Number(event.target.value),
+              } as Partial<CanvasElement>)
+            }
+            className="w-36"
+          />
+        </FieldRow>
+      )
+    )}
     <FieldRow label="Multiply">
       <select
         value={layer.effectProps?.blendMode || "normal"}
@@ -802,8 +857,9 @@ const GenericContentPanel: React.FC<{
               const rows = Math.max(1, Number(event.target.value) || 1);
               const currentData = layer.tableData || [];
               const cols = layer.cols || 3;
-              const tableData = Array.from({ length: rows }, (_, rowIndex) =>
-                currentData[rowIndex] || Array(cols).fill(""),
+              const tableData = Array.from(
+                { length: rows },
+                (_, rowIndex) => currentData[rowIndex] || Array(cols).fill("")
               );
               onUpdate({ rows, tableData });
             }}
@@ -846,7 +902,9 @@ const GenericContentPanel: React.FC<{
             min="1"
             value={layer.duration || 1}
             onChange={(event) =>
-              onUpdate({ duration: Math.max(1, Number(event.target.value) || 1) })
+              onUpdate({
+                duration: Math.max(1, Number(event.target.value) || 1),
+              })
             }
             className={compactNumberClass}
           />
@@ -894,7 +952,9 @@ const GenericStylePanel: React.FC<{
           <input
             type="color"
             value={layer.backgroundColor || "#4488FF"}
-            onChange={(event) => onUpdate({ backgroundColor: event.target.value })}
+            onChange={(event) =>
+              onUpdate({ backgroundColor: event.target.value })
+            }
             className="h-9 w-10 rounded-lg border border-border"
           />
         </FieldRow>
@@ -911,7 +971,9 @@ const GenericStylePanel: React.FC<{
             type="number"
             min="0"
             value={layer.borderWidth || 0}
-            onChange={(event) => onUpdate({ borderWidth: Number(event.target.value) })}
+            onChange={(event) =>
+              onUpdate({ borderWidth: Number(event.target.value) })
+            }
             className={compactNumberClass}
           />
         </FieldRow>
@@ -959,7 +1021,9 @@ const GenericStylePanel: React.FC<{
             type="number"
             min="0"
             value={layer.borderWidth || 1}
-            onChange={(event) => onUpdate({ borderWidth: Number(event.target.value) })}
+            onChange={(event) =>
+              onUpdate({ borderWidth: Number(event.target.value) })
+            }
             className={compactNumberClass}
           />
         </FieldRow>
@@ -968,7 +1032,9 @@ const GenericStylePanel: React.FC<{
             type="number"
             min="8"
             value={layer.fontSize || 14}
-            onChange={(event) => onUpdate({ fontSize: Number(event.target.value) })}
+            onChange={(event) =>
+              onUpdate({ fontSize: Number(event.target.value) })
+            }
             className={compactNumberClass}
           />
         </FieldRow>
@@ -985,7 +1051,9 @@ const GenericStylePanel: React.FC<{
           min="0"
           max="100"
           value={layer.opacity ?? 100}
-          onChange={(event) => onUpdate({ opacity: Number(event.target.value) })}
+          onChange={(event) =>
+            onUpdate({ opacity: Number(event.target.value) })
+          }
           className="w-36"
         />
       </FieldRow>
@@ -1012,7 +1080,9 @@ const ArrangePanel: React.FC<{
         <input
           type="number"
           value={numberValue(layer.rotation)}
-          onChange={(event) => onUpdate({ rotation: Number(event.target.value) })}
+          onChange={(event) =>
+            onUpdate({ rotation: Number(event.target.value) })
+          }
           className={compactNumberClass}
         />
       </FieldRow>
@@ -1022,7 +1092,9 @@ const ArrangePanel: React.FC<{
           min="0"
           max="100"
           value={layer.opacity ?? 100}
-          onChange={(event) => onUpdate({ opacity: Number(event.target.value) })}
+          onChange={(event) =>
+            onUpdate({ opacity: Number(event.target.value) })
+          }
           className="w-36"
         />
       </FieldRow>
@@ -1051,7 +1123,7 @@ function getElementTabs(element: CanvasElement | null) {
 function getHeaderTitle(
   openTab: DockTab,
   addToolView: "list" | "tool",
-  activeTool: ActiveTool,
+  activeTool: ActiveTool
 ) {
   if (openTab === "add") {
     if (addToolView === "tool" && activeTool && activeTool !== "select") {
@@ -1112,10 +1184,13 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
 
   const filteredTools = React.useMemo(
     () => tools.filter((tool) => tool.modes.includes(mode)),
-    [mode],
+    [mode]
   );
 
-  const tabs = React.useMemo(() => getElementTabs(selectedElement), [selectedElement]);
+  const tabs = React.useMemo(
+    () => getElementTabs(selectedElement),
+    [selectedElement]
+  );
   const primaryTab = tabs[0];
   const scrollableTabs = tabs.slice(1);
   const isOpen = openTab !== null;
@@ -1135,7 +1210,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
       return;
     }
 
-    const allowedTabs = new Set(getElementTabs(selectedElement).map((tab) => tab.id));
+    const allowedTabs = new Set(
+      getElementTabs(selectedElement).map((tab) => tab.id)
+    );
     if (openTab && openTab !== "add" && !allowedTabs.has(openTab)) {
       setOpenTab("arrange");
     }
@@ -1148,7 +1225,11 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   }, [openTab]);
 
   React.useEffect(() => {
-    if (activeTool === "select" && openTab === "add" && addToolView === "tool") {
+    if (
+      activeTool === "select" &&
+      openTab === "add" &&
+      addToolView === "tool"
+    ) {
       setAddToolView("list");
       setOpenTab(null);
     }
@@ -1299,7 +1380,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                 onDeleteElement(selectedElement.id);
                 setOpenTab(null);
               }}
-              onMoveLayer={(direction) => onMoveLayer(selectedElement.id, direction)}
+              onMoveLayer={(direction) =>
+                onMoveLayer(selectedElement.id, direction)
+              }
             />
           );
         case "effects":
@@ -1326,7 +1409,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                 onDeleteElement(selectedElement.id);
                 setOpenTab(null);
               }}
-              onMoveLayer={(direction) => onMoveLayer(selectedElement.id, direction)}
+              onMoveLayer={(direction) =>
+                onMoveLayer(selectedElement.id, direction)
+              }
             />
           );
         default:
@@ -1345,10 +1430,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           );
         case "style":
           return (
-            <TextStylePanel
-              layer={selectedElement}
-              onUpdate={updateSelected}
-            />
+            <TextStylePanel layer={selectedElement} onUpdate={updateSelected} />
           );
         case "arrange":
           return (
@@ -1360,7 +1442,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
                 onDeleteElement(selectedElement.id);
                 setOpenTab(null);
               }}
-              onMoveLayer={(direction) => onMoveLayer(selectedElement.id, direction)}
+              onMoveLayer={(direction) =>
+                onMoveLayer(selectedElement.id, direction)
+              }
             />
           );
         default:
@@ -1393,7 +1477,9 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
               onDeleteElement(selectedElement.id);
               setOpenTab(null);
             }}
-            onMoveLayer={(direction) => onMoveLayer(selectedElement.id, direction)}
+            onMoveLayer={(direction) =>
+              onMoveLayer(selectedElement.id, direction)
+            }
           />
         );
       default:
@@ -1485,42 +1571,48 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
               </div>
             )}
 
-            {openTab === "add" && addToolView === "tool" && activeTool !== "select" && (
-              <div className="px-1 pb-4">
-                <ToolbarSidePanel
-                  activeTool={activeTool}
-                  onAddElement={(el) => {
-                    onAddElement(el);
-                    setOpenTab(null);
-                    setAddToolView("list");
-                  }}
-                  onApplyTemplate={(template) => {
-                    onApplyTemplate(template);
-                    setOpenTab(null);
-                    setAddToolView("list");
-                  }}
-                  onBackgroundChange={onBackgroundChange}
-                  canvasBackground={canvasBackground}
-                  canvasSize={canvasSize}
-                  mode={mode}
-                  onCanvasSizeChange={onCanvasSizeChange}
-                  drawSettings={drawSettings}
-                  onUpdateDrawSettings={onUpdateDrawSettings}
-                  onFinishDrawing={() => {
-                    onFinishDrawing();
-                    setOpenTab(null);
-                    setAddToolView("list");
-                  }}
-                />
+            {openTab === "add" &&
+              addToolView === "tool" &&
+              activeTool !== "select" && (
+                <div className="px-1 pb-4">
+                  <ToolbarSidePanel
+                    activeTool={activeTool}
+                    onAddElement={(el) => {
+                      onAddElement(el);
+                      setOpenTab(null);
+                      setAddToolView("list");
+                    }}
+                    onApplyTemplate={(template) => {
+                      onApplyTemplate(template);
+                      setOpenTab(null);
+                      setAddToolView("list");
+                    }}
+                    onBackgroundChange={onBackgroundChange}
+                    canvasBackground={canvasBackground}
+                    canvasSize={canvasSize}
+                    mode={mode}
+                    onCanvasSizeChange={onCanvasSizeChange}
+                    drawSettings={drawSettings}
+                    onUpdateDrawSettings={onUpdateDrawSettings}
+                    onFinishDrawing={() => {
+                      onFinishDrawing();
+                      setOpenTab(null);
+                      setAddToolView("list");
+                    }}
+                  />
+                </div>
+              )}
+
+            {!selectedElement && openTab && openTab !== "add" && (
+              <div className="space-y-4 px-1 pb-4">
+                {renderDesignTabPanel()}
               </div>
             )}
 
-            {!selectedElement && openTab && openTab !== "add" && (
-              <div className="space-y-4 px-1 pb-4">{renderDesignTabPanel()}</div>
-            )}
-
             {selectedElement && openTab && openTab !== "add" && (
-              <div className="space-y-4 px-1 pb-4">{renderElementTabPanel()}</div>
+              <div className="space-y-4 px-1 pb-4">
+                {renderElementTabPanel()}
+              </div>
             )}
           </div>
         </div>
@@ -1547,7 +1639,10 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
             </span>
           </button>
 
-          <div className="min-w-0 flex-1 overflow-x-auto" data-allow-touch-scroll="x">
+          <div
+            className="min-w-0 flex-1 overflow-x-auto"
+            data-allow-touch-scroll="x"
+          >
             <div className="flex items-center gap-1 pr-1">
               {scrollableTabs.map((tab) => {
                 const Icon = tab.icon;
