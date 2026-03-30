@@ -125,7 +125,7 @@ export const BackgroundFlyout: React.FC<{
           dispatchEditorAction({ tool: "background", action: "transparent" });
         }}
       />
-      <CardOption
+      {/* <CardOption
         icon={<Upload size={20} />}
         title="My Backgrounds"
         subtitle="Add from your uploads"
@@ -142,7 +142,7 @@ export const BackgroundFlyout: React.FC<{
           onAddElement({ type: "image", x: 0, y: 0, width: 1080, height: 1920, src: stockBackground, zIndex: 0, opacity: 100 });
           dispatchEditorAction({ tool: "background", action: "stock-photo", payload: { src: stockBackground } });
         }}
-      />
+      /> */}
     </div>
   );
 };

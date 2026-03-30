@@ -293,7 +293,7 @@ const ToggleSwitch: React.FC<{
     <button
       type="button"
       onClick={onToggle}
-      className={`relative flex h-6 w-10 items-center rounded-full px-0.5 transition ${checked ? "bg-[#50b7f5]" : "bg-[#dfe3e8]"}`}
+      className={`relative flex h-6 w-10 items-center rounded-full px-0.5 transition ${checked ? "bg-[#7650e3]" : "bg-[#dfe3e8]"}`}
     >
       <span
         className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-4" : "translate-x-0"}`}
