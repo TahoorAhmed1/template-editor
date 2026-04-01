@@ -25,9 +25,10 @@ interface TopBarProps {
   onResize?: () => void;
   onAI?: () => void;
   onMobileMenu?: () => void;
+  onSave?: () => void;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, isMobile, mode, onBack, onDownload, onResize, onAI, onMobileMenu }) => {
+export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, isMobile, mode, onBack, onDownload, onResize, onAI, onMobileMenu, onSave }) => {
   if (isMobile) {
     return (
       <header className="flex h-14 items-center justify-between px-3 bg-[#7650e3] shrink-0 z-20">
@@ -60,6 +61,13 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
             className="rounded-md p-2 hover:bg-[#7650e3]-foreground/10 transition-colors disabled:opacity-30"
           >
             <Redo2 size={16} strokeWidth={1.5} className="text-primary-foreground/80" />
+          </button>
+          <button
+            onClick={onSave}
+            className="rounded-md p-2 hover:bg-[#7650e3]-foreground/10 transition-colors"
+            aria-label="Open saved canvas designs"
+          >
+            <Save size={16} strokeWidth={1.5} className="text-primary-foreground/80" />
           </button>
    
           <button className="rounded-md p-2 hover:bg-[#7650e3]-foreground/10 transition-colors">
@@ -116,7 +124,10 @@ export const TopBar: React.FC<TopBarProps> = ({ undo, redo, canUndo, canRedo, is
         </button> */}
 
 
-        <button className="inline-flex items-center gap-1.5 border border-[#7650e3]-foreground/20 hover:bg-[#7650e3]-foreground/10 text-primary-foreground text-[13px] font-medium px-4 py-2 rounded-md transition-colors duration-100">
+        <button
+          onClick={onSave}
+          className="inline-flex items-center gap-1.5 border border-[#7650e3]-foreground/20 hover:bg-[#7650e3]-foreground/10 text-primary-foreground text-[13px] font-medium px-4 py-2 rounded-md transition-colors duration-100"
+        >
           <Save size={15} strokeWidth={1.5} />
           Save
         </button>

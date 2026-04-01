@@ -8,6 +8,7 @@ export interface TemplateJson {
   source?: string;
   savedAt?: string;
   version?: number;
+  editorMode?: "image" | "video";
   elements?: Array<Record<string, unknown>>;
   aspectRatio?: string;
   canvasDimensions?: Partial<TemplateCanvasDimensions>;

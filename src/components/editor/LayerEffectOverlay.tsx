@@ -32,7 +32,8 @@ const getVerticalAlignment = (
 ) => {
   if (align === "top") return "flex-start";
   if (align === "bottom") return "flex-end";
-  return "center";
+  if (align === "middle") return "center";
+  return "flex-start";
 };
 
 const getTextFontStyle = (element: CanvasElement) => {
@@ -150,6 +151,57 @@ const getEffectBuffer = (element: CanvasElement, isMobile: boolean) => {
   );
 };
 
+const hexToRgba = (hex: string, alpha: number) => {
+  const safeHex = hex.replace("#", "");
+  if (safeHex.length !== 6) return `rgba(15, 23, 42, ${alpha})`;
+
+  const red = Number.parseInt(safeHex.slice(0, 2), 16);
+  const green = Number.parseInt(safeHex.slice(2, 4), 16);
+  const blue = Number.parseInt(safeHex.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
+};
+
+const buildTextShadow = (
+  element: CanvasElement,
+  pulseProgress: number,
+  isMobile: boolean,
+) => {
+  const effect = element.effectProps;
+  if (!effect || element.type !== "text") return undefined;
+
+  const factor = getMobileIntensityScale(isMobile);
+  const shadows: string[] = [];
+
+  if (effect.preset === "neon-glow") {
+    const glow = Math.max(4, effect.glowIntensity * factor);
+    shadows.push(`0 0 ${glow}px ${effect.glowColor}`);
+    shadows.push(`0 0 ${glow * 0.55}px ${effect.glowColor}`);
+  }
+
+  const hasShadow =
+    effect.preset === "drop-shadow" ||
+    effect.shadowBlur > 0 ||
+    Math.abs(effect.shadowOffsetX) > 0 ||
+    Math.abs(effect.shadowOffsetY) > 0 ||
+    effect.shadowOpacity > 0;
+
+  if (hasShadow) {
+    const blur = Math.max(0, effect.shadowBlur * factor);
+    const color = hexToRgba(effect.shadowColor, effect.shadowOpacity);
+    shadows.push(
+      `${effect.shadowOffsetX * factor}px ${effect.shadowOffsetY * factor}px ${blur}px ${color}`,
+    );
+  }
+
+  if (effect.preset === "pulse") {
+    const pulseGlow = Math.max(4, effect.glowIntensity * factor * (0.75 + pulseProgress * 0.55));
+    shadows.push(`0 0 ${pulseGlow}px ${effect.glowColor}`);
+  }
+
+  return shadows.length > 0 ? shadows.join(", ") : undefined;
+};
+
 const buildFilter = (
   element: CanvasElement,
   pulseProgress: number,
@@ -157,6 +209,10 @@ const buildFilter = (
 ) => {
   const effect = element.effectProps;
   if (!effect) return "none";
+
+  if (element.type === "text") {
+    return "none";
+  }
 
   const factor = getMobileIntensityScale(isMobile);
   const filters: string[] = [];
@@ -181,17 +237,6 @@ const buildFilter = (
   }
 
   return filters.length > 0 ? filters.join(" ") : "none";
-};
-
-const hexToRgba = (hex: string, alpha: number) => {
-  const safeHex = hex.replace("#", "");
-  if (safeHex.length !== 6) return `rgba(15, 23, 42, ${alpha})`;
-
-  const red = Number.parseInt(safeHex.slice(0, 2), 16);
-  const green = Number.parseInt(safeHex.slice(2, 4), 16);
-  const blue = Number.parseInt(safeHex.slice(4, 6), 16);
-
-  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
 };
 
 export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
@@ -273,7 +318,7 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
                     ? "1px solid rgba(255,255,255,0.24)"
                     : undefined,
                 overflow: "visible",
-                contain: "layout style paint",
+                contain: "layout style",
               }}
             >
               {element.type === "text" ? (
@@ -297,6 +342,7 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
                       element.textDecoration && element.textDecoration !== "none"
                         ? element.textDecoration
                         : undefined,
+                    textShadow: buildTextShadow(element, pulseProgress, isMobile),
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                     paintOrder: "stroke fill",

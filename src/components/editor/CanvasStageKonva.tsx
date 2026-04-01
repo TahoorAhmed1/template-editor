@@ -42,6 +42,7 @@ interface CanvasStageProps {
   drawSettings?: DrawSettings;
   finishDrawingRequest?: number;
   onDrawingCommitted?: (dataUrl: string | null) => void;
+  onExportCanvasReady?: (exporter: (() => string | null) | null) => void;
 }
 
 type InlineEditorState = {
@@ -103,6 +104,7 @@ const MOBILE_VIEWPORT_GUTTER = 12;
 const MIN_TRANSFORM_SIZE = 20;
 const PREVIEW_SYNC_INTERVAL_MS = 20;
 const INLINE_EDITOR_WIDTH_OFFSET = 50;
+const DOM_OVERLAY_HOST_OPACITY = 0.001;
 const DEFAULT_TRANSFORM_ANCHORS = [
   "top-left",
   "top-center",
@@ -914,6 +916,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   drawSettings = { tool: "pencil", color: "#000000", brushSize: 10 },
   finishDrawingRequest = 0,
   onDrawingCommitted,
+  onExportCanvasReady,
 }) => {
   const requestedTextEditId = useTextEditStore((state) => state.requestedElementId);
   const textEditRequestKey = useTextEditStore((state) => state.requestKey);
@@ -1337,6 +1340,57 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     stage.scale({ x: scale, y: scale });
     stage.draw();
   }, [canvasSize.width, canvasSize.height, scale]);
+
+  const exportCanvasSnapshot = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) {
+      return null;
+    }
+
+    const transformer = transformerRef.current;
+    const guideLayer = guideLayerRef.current;
+    const previousTransformerVisible = transformer?.visible() ?? true;
+    const previousGuideVisible = guideLayer?.visible() ?? true;
+    const previousWidth = stage.width();
+    const previousHeight = stage.height();
+    const previousScale = stage.scale();
+    const pixelRatio = Math.max(
+      0.2,
+      Math.min(1, 640 / Math.max(canvasSize.width, canvasSize.height, 1)),
+    );
+
+    try {
+      transformer?.visible(false);
+      guideLayer?.visible(false);
+      stage.width(canvasSize.width);
+      stage.height(canvasSize.height);
+      stage.scale({ x: 1, y: 1 });
+      stage.draw();
+
+      return stage.toDataURL({ pixelRatio });
+    } catch {
+      return null;
+    } finally {
+      stage.width(previousWidth);
+      stage.height(previousHeight);
+      stage.scale(previousScale);
+      if (transformer) {
+        transformer.visible(previousTransformerVisible);
+      }
+      if (guideLayer) {
+        guideLayer.visible(previousGuideVisible);
+      }
+      stage.draw();
+    }
+  }, [canvasSize.height, canvasSize.width]);
+
+  useEffect(() => {
+    onExportCanvasReady?.(exportCanvasSnapshot);
+
+    return () => {
+      onExportCanvasReady?.(null);
+    };
+  }, [exportCanvasSnapshot, onExportCanvasReady]);
 
   const getInlineEditorState = useCallback(
     (element: CanvasElement, node: Konva.Text): InlineEditorState => {
@@ -2189,7 +2243,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       const useDomOverlay = shouldUseDomEffectOverlay(element);
       const overlayHidden = hiddenOverlayIds.has(element.id);
       const nextOpacity = element.opacity != null
-        ? (useDomOverlay && !overlayHidden ? 0.01 : element.opacity / 100)
+        ? (useDomOverlay && !overlayHidden ? DOM_OVERLAY_HOST_OPACITY : element.opacity / 100)
         : 1;
 
       shape.opacity(nextOpacity);
@@ -3023,7 +3077,8 @@ function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps
     prev.activeTool === next.activeTool &&
     prev.drawSettings === next.drawSettings &&
     prev.finishDrawingRequest === next.finishDrawingRequest &&
-    prev.onDrawingCommitted === next.onDrawingCommitted
+    prev.onDrawingCommitted === next.onDrawingCommitted &&
+    prev.onExportCanvasReady === next.onExportCanvasReady
   );
 }
 
@@ -3044,7 +3099,7 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
       rotation: renderable.rotation || 0,
       opacity:
         renderable.opacity != null
-          ? (useDomOverlay && !overlayHidden ? 0.01 : renderable.opacity / 100)
+          ? (useDomOverlay && !overlayHidden ? DOM_OVERLAY_HOST_OPACITY : renderable.opacity / 100)
           : 1,
       scaleX: renderable.scale ?? 1,
       scaleY: renderable.scale ?? 1,

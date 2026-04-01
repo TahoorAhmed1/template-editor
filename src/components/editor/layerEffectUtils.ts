@@ -3,12 +3,19 @@ import type { CanvasElement } from "./EditorShell";
 export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
   if (element.type !== "text" && element.type !== "image") return false;
 
-  if (element.type === "text" && element.textBackgroundColor) {
-    return true;
-  }
-
   if (element.type === "text") {
-    return false;
+    const effect = element.effectProps;
+    const hasTextShadow =
+      effect?.preset === "drop-shadow" ||
+      effect?.preset === "neon-glow" ||
+      effect?.preset === "pulse" ||
+      (effect?.shadowBlur ?? 0) > 0 ||
+      Math.abs(effect?.shadowOffsetX ?? 0) > 0 ||
+      Math.abs(effect?.shadowOffsetY ?? 0) > 0 ||
+      (effect?.shadowOpacity ?? 0) > 0;
+    const hasTextStroke = (effect?.strokeWidth ?? 0) > 0;
+
+    return Boolean(element.textBackgroundColor || hasTextShadow || hasTextStroke);
   }
 
   const effect = element.effectProps;

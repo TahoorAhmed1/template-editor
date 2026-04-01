@@ -10,6 +10,17 @@ import { LayersPanel } from "./LayersPanel";
 import { MobileLayerSheet, type MobileLayerSheetSection } from "./MobileLayerSheet";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 import type { TemplateApplyPayload } from "./templateTypes";
+import { CanvasDesignManager } from "./CanvasDesignManager";
+import {
+  createCanvasDesign,
+  deleteCanvasDesign,
+  listCanvasDesigns,
+  renameCanvasDesign,
+  updateCanvasDesign,
+  type CanvasDesignRecord,
+  type CanvasDesignSnapshot,
+} from "@/services/canvasDesigns";
+import { toast } from "@/components/ui/sonner";
 
 export type ToolType =
   | "uploads"
@@ -289,6 +300,46 @@ const reindexLayers = (layers: CanvasElement[]) =>
     zIndex: index + 1,
   }));
 
+const getGreatestCommonDivisor = (left: number, right: number): number => {
+  const safeLeft = Math.abs(Math.round(left));
+  const safeRight = Math.abs(Math.round(right));
+
+  if (!safeRight) {
+    return safeLeft || 1;
+  }
+
+  return getGreatestCommonDivisor(safeRight, safeLeft % safeRight);
+};
+
+const getCanvasSizeKey = (size: Pick<CanvasSizePreset, "width" | "height">) =>
+  `${size.width}x${size.height}`;
+
+const getCanvasRatioLabel = (size: Pick<CanvasSizePreset, "width" | "height">) => {
+  const divisor = getGreatestCommonDivisor(size.width, size.height);
+  return `${Math.round(size.width / divisor)}:${Math.round(size.height / divisor)}`;
+};
+
+const getCanvasOrientationLabel = (size: Pick<CanvasSizePreset, "width" | "height">) => {
+  if (size.width === size.height) {
+    return "Square";
+  }
+
+  return size.width > size.height ? "Landscape" : "Portrait";
+};
+
+const getAutoDesignName = (size: CanvasSizePreset) => {
+  const normalizedLabel = size.label?.trim() || "Custom";
+  const ratio = getCanvasRatioLabel(size);
+  const orientation = getCanvasOrientationLabel(size);
+  const sizeLabel = `${size.width}x${size.height}`;
+
+  if (normalizedLabel.toLowerCase() === "custom") {
+    return `${orientation} ${ratio} ${sizeLabel}`;
+  }
+
+  return `${normalizedLabel} ${ratio} ${sizeLabel}`;
+};
+
 const INSERTION_MARGIN = 24;
 const INSERTION_OFFSET_STEP = 28;
 const INSERTION_SEARCH_LIMIT = 36;
@@ -353,18 +404,57 @@ const getTemplateOriginMode = (value: unknown): "start" | "center" | "end" | und
 
 const getTemplateCanvasSize = (
   canvasDimensions: unknown,
+  rawElements: unknown,
   fallbackCanvasSize: Pick<CanvasSizePreset, "width" | "height">,
 ) => {
   if (!canvasDimensions || typeof canvasDimensions !== "object") {
-    return fallbackCanvasSize;
+    return inferCanvasSizeFromRawElements(rawElements, fallbackCanvasSize);
   }
 
   const width = getOptionalNumber((canvasDimensions as Record<string, unknown>).width);
   const height = getOptionalNumber((canvasDimensions as Record<string, unknown>).height);
 
   return {
-    width: width && width > 0 ? width : fallbackCanvasSize.width,
-    height: height && height > 0 ? height : fallbackCanvasSize.height,
+    width: width && width > 0 ? width : inferCanvasSizeFromRawElements(rawElements, fallbackCanvasSize).width,
+    height: height && height > 0 ? height : inferCanvasSizeFromRawElements(rawElements, fallbackCanvasSize).height,
+  };
+};
+
+const inferCanvasSizeFromRawElements = (
+  rawElements: unknown,
+  fallbackCanvasSize: Pick<CanvasSizePreset, "width" | "height">,
+) => {
+  if (!Array.isArray(rawElements) || rawElements.length === 0) {
+    return fallbackCanvasSize;
+  }
+
+  let maxRight = 0;
+  let maxBottom = 0;
+  let hasMeasuredElement = false;
+
+  rawElements.forEach((element) => {
+    if (!element || typeof element !== "object") {
+      return;
+    }
+
+    const candidate = element as Record<string, unknown>;
+    const x = getNumberOr(candidate.x, 0);
+    const y = getNumberOr(candidate.y, 0);
+    const width = Math.max(1, getNumberOr(candidate.width, 0));
+    const height = Math.max(1, getNumberOr(candidate.height, 0));
+
+    maxRight = Math.max(maxRight, x + width);
+    maxBottom = Math.max(maxBottom, y + height);
+    hasMeasuredElement = true;
+  });
+
+  if (!hasMeasuredElement) {
+    return fallbackCanvasSize;
+  }
+
+  return {
+    width: Math.max(1, Math.round(maxRight)),
+    height: Math.max(1, Math.round(maxBottom)),
   };
 };
 
@@ -496,6 +586,87 @@ const normalizeTemplateElement = (
   );
 };
 
+const isCanvasElementRecord = (value: unknown): value is CanvasElement =>
+  typeof value === "object" && value !== null;
+
+const parseDimensionSize = (dimension?: string) => {
+  if (!dimension) {
+    return null;
+  }
+
+  const match = dimension.match(/^(\d+)x(\d+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { width, height };
+};
+
+const resolveSavedDesignCanvasSize = (
+  design: CanvasDesignRecord,
+  fallbackSize: CanvasSizePreset,
+): CanvasSizePreset => {
+  const dimensionSize = parseDimensionSize(design.dimension);
+  const savedWidth = getOptionalNumber(design.json.canvasDimensions?.width);
+  const savedHeight = getOptionalNumber(design.json.canvasDimensions?.height);
+
+  // Prefer explicitly stored dimensions; fall back to the current canvas size.
+  // Do NOT infer canvas size from element bounding boxes — that produces unreliable
+  // results (e.g. a text layer at x:157 y:210 would produce a tiny landscape canvas).
+  const width = savedWidth && savedWidth > 0
+    ? savedWidth
+    : dimensionSize?.width && dimensionSize.width > 0
+    ? dimensionSize.width
+    : fallbackSize.width;
+  const height = savedHeight && savedHeight > 0
+    ? savedHeight
+    : dimensionSize?.height && dimensionSize.height > 0
+    ? dimensionSize.height
+    : fallbackSize.height;
+
+  return {
+    label: design.name || fallbackSize.label,
+    width,
+    height,
+    description: `${width} × ${height}px`,
+  };
+};
+
+const resolveTemplateCanvasSize = (
+  template: TemplateApplyPayload,
+  fallbackSize: CanvasSizePreset,
+): CanvasSizePreset => {
+  // Priority: dimension string (most explicit) → json.canvasDimensions → current canvas.
+  // Do NOT infer from element bounding boxes.
+  const dimensionSize = parseDimensionSize(template.dimension);
+  const savedWidth = getOptionalNumber(template.json.canvasDimensions?.width);
+  const savedHeight = getOptionalNumber(template.json.canvasDimensions?.height);
+
+  const width = dimensionSize?.width && dimensionSize.width > 0
+    ? dimensionSize.width
+    : savedWidth && savedWidth > 0
+    ? savedWidth
+    : fallbackSize.width;
+  const height = dimensionSize?.height && dimensionSize.height > 0
+    ? dimensionSize.height
+    : savedHeight && savedHeight > 0
+    ? savedHeight
+    : fallbackSize.height;
+
+  return {
+    label: template.name || fallbackSize.label,
+    width,
+    height,
+    description: `${width} × ${height}px`,
+  };
+};
+
 const getLayerBounds = ({ x, y, width, height }: LayerBounds): LayerBounds => ({
   x,
   y,
@@ -614,6 +785,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [showDownloadModal, setShowDownloadModal] = React.useState(false);
   const [showResizeModal, setShowResizeModal] = React.useState(false);
   const [showAIModal, setShowAIModal] = React.useState(false);
+  const [showDesignManager, setShowDesignManager] = React.useState(false);
   const [recordCaptureMode, setRecordCaptureMode] = React.useState<RecordCaptureMode | null>(null);
   const [drawSettings, setDrawSettings] = React.useState<DrawSettings>({
     tool: "pencil",
@@ -631,6 +803,17 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
 const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   const [mobileLayerSheetSection, setMobileLayerSheetSection] = React.useState<MobileLayerSheetSection>("content");
   const [mobileLayerSheetLocked, setMobileLayerSheetLocked] = React.useState(false);
+  const [currentDesignId, setCurrentDesignId] = React.useState<string | null>(null);
+  const [currentDesignName, setCurrentDesignName] = React.useState("");
+  const [currentDesignNameSizeKey, setCurrentDesignNameSizeKey] = React.useState<string | null>(null);
+  const [savedDesigns, setSavedDesigns] = React.useState<CanvasDesignRecord[]>([]);
+  const [isDesignsLoading, setIsDesignsLoading] = React.useState(false);
+  const [isDesignSavePending, setIsDesignSavePending] = React.useState(false);
+  const [activeDesignAction, setActiveDesignAction] = React.useState<{
+    type: "load" | "rename" | "delete" | null;
+    id: string | null;
+  }>({ type: null, id: null });
+  const exportCanvasSnapshotRef = React.useRef<(() => string | null) | null>(null);
   const [elements, setElements] = React.useState<CanvasElement[]>(() => [
     // normalizeLayer(initialTitleElementRef.current!, 0),
   ]);
@@ -677,6 +860,80 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
+
+  const getDefaultDesignName = useCallback(
+    (preferredName?: string) => {
+      const trimmedPreferredName = preferredName?.trim();
+      if (trimmedPreferredName) {
+        return trimmedPreferredName;
+      }
+
+      const trimmedTitle = designTitle.trim();
+      if (trimmedTitle) {
+        return trimmedTitle;
+      }
+
+      return getAutoDesignName(canvasSize);
+    },
+    [canvasSize, designTitle],
+  );
+
+  const getResolvedCurrentDesignName = useCallback(
+    (preferredName?: string) => {
+      const trimmedPreferredName = preferredName?.trim();
+      if (trimmedPreferredName) {
+        return trimmedPreferredName;
+      }
+
+      const trimmedCurrentDesignName = currentDesignName.trim();
+      if (
+        trimmedCurrentDesignName &&
+        currentDesignNameSizeKey === getCanvasSizeKey(canvasSize)
+      ) {
+        return trimmedCurrentDesignName;
+      }
+
+      return getDefaultDesignName();
+    },
+    [canvasSize, currentDesignName, currentDesignNameSizeKey, getDefaultDesignName],
+  );
+
+  const createCurrentDesignSnapshot = useCallback(
+    (preferredName?: string): CanvasDesignSnapshot => ({
+      name: getResolvedCurrentDesignName(preferredName),
+      mode,
+      canvasSize,
+      canvasBackground,
+      elements,
+      thumbnailDataUrl: exportCanvasSnapshotRef.current?.() ?? undefined,
+    }),
+    [canvasBackground, canvasSize, elements, getResolvedCurrentDesignName, mode],
+  );
+
+  const handleExportCanvasReady = useCallback((exporter: (() => string | null) | null) => {
+    exportCanvasSnapshotRef.current = exporter;
+  }, []);
+
+  const loadSavedDesigns = useCallback(async () => {
+    setIsDesignsLoading(true);
+
+    try {
+      const designs = await listCanvasDesigns();
+      setSavedDesigns(designs);
+    } catch {
+      toast.error("Unable to load saved designs.");
+    } finally {
+      setIsDesignsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!showDesignManager) {
+      return;
+    }
+
+    void loadSavedDesigns();
+  }, [loadSavedDesigns, showDesignManager]);
 
   const layers = React.useMemo(
     () => [...elements].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
@@ -1263,11 +1520,16 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
     (template: TemplateApplyPayload) => {
       const lockedIds = new Set(template.json.lockedElementIds ?? []);
       const rawElements = Array.isArray(template.json.elements) ? template.json.elements : [];
-      const sourceCanvasSize = getTemplateCanvasSize(template.json.canvasDimensions, canvasSize);
+      const nextCanvasSize = resolveTemplateCanvasSize(template, canvasSize);
+      const sourceCanvasSize = getTemplateCanvasSize(
+        template.json.canvasDimensions,
+        rawElements,
+        nextCanvasSize,
+      );
       const normalizedElements = reindexLayers(
         rawElements
           .map((element, index) =>
-            normalizeTemplateElement(element, lockedIds, index, sourceCanvasSize, canvasSize),
+            normalizeTemplateElement(element, lockedIds, index, sourceCanvasSize, nextCanvasSize),
           )
           .filter((element): element is CanvasElement => Boolean(element))
           .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
@@ -1277,8 +1539,12 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       clearElementPreview();
       setSelectedLayerId(null);
       setDesignTitle(template.name);
+      setCurrentDesignName(template.name);
+      setCurrentDesignNameSizeKey(getCanvasSizeKey(nextCanvasSize));
+      setCanvasSize(nextCanvasSize);
       setCanvasBackground(nextBackground);
       setElements(normalizedElements);
+      setCurrentDesignId(null);
       pushHistory(normalizedElements, nextBackground);
       setActiveTool("select");
       setSidebarExpanded(false);
@@ -1306,6 +1572,145 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
     console.log(`Generating content with prompt: ${prompt}`);
     setShowAIModal(false);
   }, []);
+
+  const handleSaveCurrentDesign = useCallback(
+    async (name: string, saveAsCopy = false) => {
+      setIsDesignSavePending(true);
+
+      try {
+        const snapshot = createCurrentDesignSnapshot(name);
+        const savedDesign = currentDesignId && !saveAsCopy
+          ? await updateCanvasDesign(currentDesignId, snapshot)
+          : await createCanvasDesign(snapshot);
+
+        setCurrentDesignId(savedDesign.id);
+        setCurrentDesignName(savedDesign.name);
+        setCurrentDesignNameSizeKey(getCanvasSizeKey(canvasSize));
+        setDesignTitle(savedDesign.name);
+        await loadSavedDesigns();
+
+        toast.success(
+          currentDesignId && !saveAsCopy
+            ? "Canvas design updated."
+            : saveAsCopy
+            ? "Canvas design saved as a new copy."
+            : "Canvas design saved.",
+        );
+      } catch {
+        toast.error("Unable to save this canvas design.");
+      } finally {
+        setIsDesignSavePending(false);
+      }
+    },
+    [createCurrentDesignSnapshot, currentDesignId, loadSavedDesigns],
+  );
+
+  const handleLoadSavedDesign = useCallback(
+    async (design: CanvasDesignRecord) => {
+      // If this design is already active, just close the manager — no reload needed.
+      if (design.id === currentDesignId) {
+        setShowDesignManager(false);
+        return;
+      }
+
+      setActiveDesignAction({ type: "load", id: design.id });
+
+      try {
+        const nextCanvasSize = resolveSavedDesignCanvasSize(design, canvasSize);
+        const rawElements = Array.isArray(design.json.elements) ? design.json.elements : [];
+        const normalizedElements = reindexLayers(
+          rawElements
+            .filter(isCanvasElementRecord)
+            .map((element, index) => normalizeLayer(element, index + 1))
+            .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0)),
+        );
+        const nextBackground = design.json.canvasBackground || "#FFFFFF";
+
+        clearElementPreview();
+        clearTextEditRequest();
+        setSelectedLayerId(null);
+        setCanvasSize(nextCanvasSize);
+        setCanvasBackground(nextBackground);
+        setDesignTitle(design.name);
+        setCurrentDesignName(design.name);
+        setCurrentDesignNameSizeKey(getCanvasSizeKey(nextCanvasSize));
+        setElements(normalizedElements);
+        setHistory([
+          {
+            elements: normalizedElements,
+            canvasBackground: nextBackground,
+          },
+        ]);
+        setHistoryIndex(0);
+        setCurrentDesignId(design.id);
+        // Preserve the user's current zoom level instead of resetting to 100%.
+        setCurrentTime(0);
+        setIsPlaying(false);
+        setActiveTool("select");
+        setSidebarExpanded(false);
+        setMobileLayerSheetOpen(false);
+        setMobileLayerSheetLocked(false);
+        setRequestedMobileTab(null);
+        setShowDesignManager(false);
+
+        // toast.success("Canvas design loaded.");
+      } catch {
+        toast.error("Unable to load this saved design.");
+      } finally {
+        setActiveDesignAction({ type: null, id: null });
+      }
+    },
+    [canvasSize, clearElementPreview, clearTextEditRequest, currentDesignId],
+  );
+
+  const handleRenameSavedDesign = useCallback(
+    async (design: CanvasDesignRecord, name: string) => {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return;
+      }
+
+      setActiveDesignAction({ type: "rename", id: design.id });
+
+      try {
+        const updatedDesign = await renameCanvasDesign(design.id, trimmedName);
+        if (currentDesignId === updatedDesign.id) {
+          setCurrentDesignName(updatedDesign.name);
+          setCurrentDesignNameSizeKey(getCanvasSizeKey(canvasSize));
+          setDesignTitle(updatedDesign.name);
+        }
+        await loadSavedDesigns();
+        toast.success("Canvas design renamed.");
+      } catch {
+        toast.error("Unable to rename this design.");
+      } finally {
+        setActiveDesignAction({ type: null, id: null });
+      }
+    },
+    [currentDesignId, loadSavedDesigns],
+  );
+
+  const handleDeleteSavedDesign = useCallback(
+    async (design: CanvasDesignRecord) => {
+      setActiveDesignAction({ type: "delete", id: design.id });
+
+      try {
+        await deleteCanvasDesign(design.id);
+        if (currentDesignId === design.id) {
+          setCurrentDesignId(null);
+          setCurrentDesignName("");
+          setCurrentDesignNameSizeKey(null);
+        }
+        await loadSavedDesigns();
+        toast.success("Canvas design deleted.");
+      } catch {
+        toast.error("Unable to delete this design.");
+      } finally {
+        setActiveDesignAction({ type: null, id: null });
+      }
+    },
+    [currentDesignId, loadSavedDesigns],
+  );
 
   React.useEffect(() => {
   const el = editorRootRef.current;
@@ -1655,6 +2060,40 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
     );
   }
 
+  const designManager = (
+    <CanvasDesignManager
+      open={showDesignManager}
+      onOpenChange={setShowDesignManager}
+      currentDesignId={currentDesignId}
+      currentDesignName={getResolvedCurrentDesignName()}
+      currentCanvasSize={canvasSize}
+      currentElementCount={elements.length}
+      designs={savedDesigns}
+      isLoading={isDesignsLoading}
+      isSaving={isDesignSavePending}
+      activeDesignId={activeDesignAction.id}
+      activeAction={activeDesignAction.type}
+      onRefresh={() => {
+        void loadSavedDesigns();
+      }}
+      onSaveCurrent={(name) => {
+        void handleSaveCurrentDesign(name, false);
+      }}
+      onSaveAsNew={(name) => {
+        void handleSaveCurrentDesign(name, true);
+      }}
+      onLoadDesign={(design) => {
+        void handleLoadSavedDesign(design);
+      }}
+      onRenameDesign={(design, name) => {
+        void handleRenameSavedDesign(design, name);
+      }}
+      onDeleteDesign={(design) => {
+        void handleDeleteSavedDesign(design);
+      }}
+    />
+  );
+
   if (isMobile) {
   return (
     <div
@@ -1675,6 +2114,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         onResize={() => setShowResizeModal(true)}
         onAI={() => setShowAIModal(true)}
         onMobileMenu={() => setRequestedMobileTab("add")}
+        onSave={() => setShowDesignManager(true)}
       />
 
       <div className="grid flex-1 min-h-0 grid-cols-1 overflow-hidden bg-[#eef1f5]">
@@ -1702,6 +2142,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           drawSettings={drawSettings}
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
+          onExportCanvasReady={handleExportCanvasReady}
         />
         </div>
 
@@ -1745,6 +2186,8 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           onDownload={handleDownload}
         />
       )}
+
+      {designManager}
 
       {showResizeModal && (
         <ResizeModal
@@ -1807,6 +2250,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         onDownload={() => setShowDownloadModal(true)}
         onResize={() => setShowResizeModal(true)}
         onAI={() => setShowAIModal(true)}
+        onSave={() => setShowDesignManager(true)}
       />
 
       <div className="grid flex-1 min-h-0 grid-cols-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#f7f7f8]">
@@ -1845,6 +2289,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           drawSettings={drawSettings}
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
+          onExportCanvasReady={handleExportCanvasReady}
         />
 
         <div className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l border-editor-inspector-border bg-editor-inspector">
@@ -1909,6 +2354,8 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           onDownload={handleDownload}
         />
       )}
+
+      {designManager}
 
       {showResizeModal && (
         <ResizeModal
