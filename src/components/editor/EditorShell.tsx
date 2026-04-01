@@ -360,6 +360,25 @@ const clampInsertionCoordinate = (
   return Math.min(maxCoordinate, Math.max(INSERTION_MARGIN, Math.round(value)));
 };
 
+const clampValue = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const clampLayerToCanvas = (
+  layer: CanvasElement,
+  canvasSize: Pick<CanvasSizePreset, "width" | "height">,
+): CanvasElement => {
+  const width = clampValue(Math.round(layer.width), 1, Math.max(1, canvasSize.width));
+  const height = clampValue(Math.round(layer.height), 1, Math.max(1, canvasSize.height));
+
+  return {
+    ...layer,
+    width,
+    height,
+    x: clampValue(Math.round(layer.x), 0, Math.max(0, canvasSize.width - width)),
+    y: clampValue(Math.round(layer.y), 0, Math.max(0, canvasSize.height - height)),
+  };
+};
+
 const getOptionalNumber = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
@@ -772,6 +791,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [selectedLayerId, setSelectedLayerId] = React.useState<string | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
   const [zoom, setZoom] = React.useState(100);
+  const [viewportResetKey, setViewportResetKey] = React.useState(0);
   const [canvasSize, setCanvasSize] = React.useState<CanvasSizePreset>(safeInitialSize);
   const [canvasBackground, setCanvasBackground] = React.useState("#FFFFFF");
   const [designTitle, setDesignTitle] = React.useState("");
@@ -1052,7 +1072,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
           changed = true;
           return normalizeLayer(
-            { ...el, ...sanitizedUpdates },
+            clampLayerToCanvas({ ...el, ...sanitizedUpdates }, canvasSize),
             el.zIndex ?? index + 1,
           );
         });
@@ -1065,7 +1085,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         return next;
       });
     },
-    [pushHistory]
+    [canvasSize, pushHistory]
   );
 
   // const addElement = useCallback(
@@ -1094,7 +1114,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
       const next = prev.map((el) =>
         el.id === selectedLayerId
-          ? { ...el, x: el.x + dx, y: el.y + dy }
+          ? clampLayerToCanvas({ ...el, x: el.x + dx, y: el.y + dy }, canvasSize)
           : el
       );
 
@@ -1102,7 +1122,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       return next;
     });
   },
-  [selectedLayerId, pushHistory]
+  [canvasSize, selectedLayerId, pushHistory]
 );
 
   const addElement = useCallback(
@@ -1113,11 +1133,14 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         const insertionPosition = findInsertionPosition(prev, canvasSize, element);
         const nextZIndex = prev.length + 1;
         const newEl = normalizeLayer(
-          {
-            ...element,
-            ...insertionPosition,
-            id: generateId(),
-          },
+          clampLayerToCanvas(
+            {
+              ...element,
+              ...insertionPosition,
+              id: generateId(),
+            },
+            canvasSize,
+          ),
           nextZIndex,
         );
 
@@ -1295,13 +1318,16 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           const el = next.find((e) => e.id === currentId);
           if (el) {
             const newEl = normalizeLayer(
-              {
-                ...el,
-                id: generateId(),
-                x: el.x + 20,
-                y: el.y + 20,
-                zIndex: next.length + 1,
-              },
+              clampLayerToCanvas(
+                {
+                  ...el,
+                  id: generateId(),
+                  x: el.x + 20,
+                  y: el.y + 20,
+                  zIndex: next.length + 1,
+                },
+                canvasSize,
+              ),
               next.length + 1,
             );
             next.push(newEl);
@@ -1315,7 +1341,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         return normalized;
       });
     },
-    [pushHistory, selectedLayerId]
+    [canvasSize, pushHistory, selectedLayerId]
   );
 
   const moveElementLayer = useCallback(
@@ -1484,28 +1510,34 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         const next = prev.map((el) => {
           if (el.role === TITLE_ELEMENT_ROLE) {
             const nextWidth = Math.min(Math.max(newSize.width - 96, 240), 720);
-            return {
-              ...el,
-              x: Math.max(24, Math.round((newSize.width - nextWidth) / 2)),
-              y: Math.max(28, Math.round(newSize.height * 0.1)),
-              width: nextWidth,
-              height: Math.max(72, Math.round((el.height || 88) * resizeScale)),
-              fontSize: el.fontSize
-                ? Math.max(28, Math.round(el.fontSize * resizeScale))
-                : el.fontSize,
-            };
+            return clampLayerToCanvas(
+              {
+                ...el,
+                x: Math.max(24, Math.round((newSize.width - nextWidth) / 2)),
+                y: Math.max(28, Math.round(newSize.height * 0.1)),
+                width: nextWidth,
+                height: Math.max(72, Math.round((el.height || 88) * resizeScale)),
+                fontSize: el.fontSize
+                  ? Math.max(28, Math.round(el.fontSize * resizeScale))
+                  : el.fontSize,
+              },
+              newSize,
+            );
           }
 
-          return {
-            ...el,
-            x: Math.round(el.x * scaleX),
-            y: Math.round(el.y * scaleY),
-            width: Math.round(el.width * resizeScale),
-            height: Math.round(el.height * resizeScale),
-            fontSize: el.fontSize ? Math.round(el.fontSize * resizeScale) : el.fontSize,
-            borderWidth: el.borderWidth ? Math.round(el.borderWidth * resizeScale) : el.borderWidth,
-            borderRadius: el.borderRadius ? Math.round(el.borderRadius * resizeScale) : el.borderRadius,
-          };
+          return clampLayerToCanvas(
+            {
+              ...el,
+              x: Math.round(el.x * scaleX),
+              y: Math.round(el.y * scaleY),
+              width: Math.round(el.width * resizeScale),
+              height: Math.round(el.height * resizeScale),
+              fontSize: el.fontSize ? Math.round(el.fontSize * resizeScale) : el.fontSize,
+              borderWidth: el.borderWidth ? Math.round(el.borderWidth * resizeScale) : el.borderWidth,
+              borderRadius: el.borderRadius ? Math.round(el.borderRadius * resizeScale) : el.borderRadius,
+            },
+            newSize,
+          );
         });
         pushHistory(next);
         return next;
@@ -1532,6 +1564,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
             normalizeTemplateElement(element, lockedIds, index, sourceCanvasSize, nextCanvasSize),
           )
           .filter((element): element is CanvasElement => Boolean(element))
+          .map((element) => clampLayerToCanvas(element, nextCanvasSize))
           .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
       );
       const nextBackground = template.json.canvasBackground || "#FFFFFF";
@@ -1551,6 +1584,11 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setMobileLayerSheetOpen(false);
       setMobileLayerSheetLocked(false);
       setRequestedMobileTab(null);
+      // Delay past the dialog close animation (200ms) so scroll-lock is fully released
+      // and the container has stable, correct dimensions when fitToScreen runs.
+      window.setTimeout(() => {
+        setViewportResetKey((current) => current + 1);
+      }, 250);
     },
     [canvasSize, clearElementPreview, pushHistory],
   );
@@ -1602,7 +1640,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setIsDesignSavePending(false);
       }
     },
-    [createCurrentDesignSnapshot, currentDesignId, loadSavedDesigns],
+    [canvasSize, createCurrentDesignSnapshot, currentDesignId, loadSavedDesigns],
   );
 
   const handleLoadSavedDesign = useCallback(
@@ -1620,8 +1658,14 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         const rawElements = Array.isArray(design.json.elements) ? design.json.elements : [];
         const normalizedElements = reindexLayers(
           rawElements
-            .filter(isCanvasElementRecord)
-            .map((element, index) => normalizeLayer(element, index + 1))
+            .reduce<CanvasElement[]>((accumulator, element, index) => {
+              if (isCanvasElementRecord(element)) {
+                accumulator.push(normalizeLayer(element, index + 1));
+              }
+
+              return accumulator;
+            }, [])
+            .map((element) => clampLayerToCanvas(element, nextCanvasSize))
             .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0)),
         );
         const nextBackground = design.json.canvasBackground || "#FFFFFF";
@@ -1652,6 +1696,11 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setMobileLayerSheetLocked(false);
         setRequestedMobileTab(null);
         setShowDesignManager(false);
+        // Delay past the Radix Dialog 200ms close animation so the body scroll-lock is
+        // fully released and the canvas container has stable dimensions for fitToScreen.
+        window.setTimeout(() => {
+          setViewportResetKey((current) => current + 1);
+        }, 250);
 
         // toast.success("Canvas design loaded.");
       } catch {
@@ -1687,7 +1736,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setActiveDesignAction({ type: null, id: null });
       }
     },
-    [currentDesignId, loadSavedDesigns],
+    [canvasSize, currentDesignId, loadSavedDesigns],
   );
 
   const handleDeleteSavedDesign = useCallback(
@@ -2143,6 +2192,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
           onExportCanvasReady={handleExportCanvasReady}
+          viewportResetKey={viewportResetKey}
         />
         </div>
 
@@ -2290,6 +2340,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
           onExportCanvasReady={handleExportCanvasReady}
+          viewportResetKey={viewportResetKey}
         />
 
         <div className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-l border-editor-inspector-border bg-editor-inspector">

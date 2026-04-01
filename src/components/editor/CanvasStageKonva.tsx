@@ -43,6 +43,7 @@ interface CanvasStageProps {
   finishDrawingRequest?: number;
   onDrawingCommitted?: (dataUrl: string | null) => void;
   onExportCanvasReady?: (exporter: (() => string | null) | null) => void;
+  viewportResetKey?: number;
 }
 
 type InlineEditorState = {
@@ -94,13 +95,18 @@ const GRID_SIZE = 50;
 const GRID_MINOR_COLOR = "rgba(15, 23, 42, 0.14)";
 const GRID_MAJOR_COLOR = "rgba(15, 23, 42, 0.24)";
 const GRID_MAJOR_EVERY = 5;
-const GUIDE_COLOR = "rgba(37, 99, 235, 0.9)";
+const SELECTION_ACCENT_COLOR = "#7650e3";
+const GUIDE_COLOR = "rgba(118, 80, 227, 0.9)";
 const GUIDE_SNAP_THRESHOLD = 6;
-const TRANSFORM_GHOST_COLOR = "rgba(59, 130, 246, 0.7)";
+const TRANSFORM_GHOST_COLOR = "rgba(118, 80, 227, 0.72)";
+const TRANSFORM_GHOST_FILL = "rgba(118, 80, 227, 0.06)";
+const INLINE_EDITOR_HIGHLIGHT = "rgba(118, 80, 227, 0.14)";
 const MIN_ZOOM_PERCENT = 10;
 const MAX_DESKTOP_ZOOM_PERCENT = 200;
 const MAX_MOBILE_ZOOM_PERCENT = 500;
 const MOBILE_VIEWPORT_GUTTER = 12;
+const DESKTOP_VIEWPORT_PADDING_X = 140;
+const DESKTOP_VIEWPORT_PADDING_Y = 110;
 const MIN_TRANSFORM_SIZE = 20;
 const PREVIEW_SYNC_INTERVAL_MS = 20;
 const INLINE_EDITOR_WIDTH_OFFSET = 50;
@@ -169,6 +175,45 @@ function clampViewportOffset(
   const minOffset = safeViewport - contentSize - gutter;
   const maxOffset = gutter;
   return clamp(Math.round(value), Math.round(minOffset), Math.round(maxOffset));
+}
+
+function clampGuideBoundsPosition(
+  bounds: GuideBounds,
+  canvasSize: Pick<CanvasStageProps["canvasSize"], "width" | "height">,
+) {
+  const visibleWidth = Math.min(Math.max(1, Math.round(bounds.width)), Math.max(1, canvasSize.width));
+  const visibleHeight = Math.min(Math.max(1, Math.round(bounds.height)), Math.max(1, canvasSize.height));
+
+  return {
+    ...bounds,
+    x: clamp(Math.round(bounds.x), 0, Math.max(0, canvasSize.width - visibleWidth)),
+    y: clamp(Math.round(bounds.y), 0, Math.max(0, canvasSize.height - visibleHeight)),
+  };
+}
+
+function clampGuideBoundsToCanvas(
+  bounds: GuideBounds,
+  canvasSize: Pick<CanvasStageProps["canvasSize"], "width" | "height">,
+) {
+  const width = clamp(
+    Math.round(bounds.width),
+    MIN_TRANSFORM_SIZE,
+    Math.max(MIN_TRANSFORM_SIZE, canvasSize.width),
+  );
+  const height = clamp(
+    Math.round(bounds.height),
+    MIN_TRANSFORM_SIZE,
+    Math.max(MIN_TRANSFORM_SIZE, canvasSize.height),
+  );
+
+  return clampGuideBoundsPosition(
+    {
+      ...bounds,
+      width,
+      height,
+    },
+    canvasSize,
+  );
 }
 
 function getOppositeCorner(bounds: GuideBounds, activeAnchor: string | null): ViewportPoint {
@@ -917,17 +962,26 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   finishDrawingRequest = 0,
   onDrawingCommitted,
   onExportCanvasReady,
+  viewportResetKey = 0,
 }) => {
   const requestedTextEditId = useTextEditStore((state) => state.requestedElementId);
   const textEditRequestKey = useTextEditStore((state) => state.requestKey);
   const consumeTextEditRequest = useTextEditStore((state) => state.consumeTextEditRequest);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
+  const desktopViewportRef = useRef<HTMLDivElement>(null);
   const konvaContainerRef = useRef<HTMLDivElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const pinchSessionRef = useRef<PinchSession | null>(null);
   const fitZoomRef = useRef(zoom);
   const hasManualMobileTransformRef = useRef(false);
+  const desktopViewportCenterFrameRef = useRef<number | null>(null);
+  const [hasFit, setHasFit] = React.useState(false);
+  // Keep a ref to canvasSize so fitToScreen/centerDesktopViewport can read the latest
+  // value without being recreated every time canvasSize changes. This prevents
+  // useLayoutEffect([fitToScreen]) from firing during dialog close animations.
+  const canvasSizeRef = useRef(canvasSize);
+  canvasSizeRef.current = canvasSize;
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const layerRef = useRef<Konva.Layer | null>(null);
@@ -1036,7 +1090,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         stroke: TRANSFORM_GHOST_COLOR,
         strokeWidth: 1,
         dash: [6, 5],
-        fill: "rgba(59, 130, 246, 0.04)",
+        fill: TRANSFORM_GHOST_FILL,
         listening: false,
       }),
     );
@@ -1194,6 +1248,55 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       }
     },
     [clampMobilePan, mobilePan, onZoomChange, zoom],
+  );
+
+  /**
+   * Center the desktop scroll viewport using pure math (same formula as the inner div's CSS
+   * width/height), so it works correctly even before the DOM has repainted after a zoom/canvas
+   * size change.
+   */
+  const centerDesktopViewport = useCallback(
+    (nextZoomPercent: number) => {
+      if (isMobileViewport) return;
+
+      const viewport = desktopViewportRef.current;
+      if (!viewport) return;
+
+      const containerW = viewport.clientWidth;
+      const containerH = viewport.clientHeight;
+      if (containerW <= 0 || containerH <= 0) return;
+
+      const { width: csW, height: csH } = canvasSizeRef.current;
+      const scale = nextZoomPercent / 100;
+      const innerW = Math.max(
+        containerW,
+        Math.round(csW * scale + DESKTOP_VIEWPORT_PADDING_X),
+      );
+      const innerH = Math.max(
+        containerH,
+        Math.round(csH * scale + DESKTOP_VIEWPORT_PADDING_Y),
+      );
+
+      viewport.scrollLeft = Math.round((innerW - containerW) / 2);
+      viewport.scrollTop = Math.round((innerH - containerH) / 2);
+    },
+    [isMobileViewport], // canvasSize intentionally read from ref — no identity change on resize
+  );
+
+  const scheduleDesktopViewportCenter = useCallback(
+    (nextZoomPercent: number) => {
+      if (isMobileViewport) return;
+
+      if (desktopViewportCenterFrameRef.current != null) {
+        cancelAnimationFrame(desktopViewportCenterFrameRef.current);
+      }
+
+      desktopViewportCenterFrameRef.current = requestAnimationFrame(() => {
+        desktopViewportCenterFrameRef.current = null;
+        centerDesktopViewport(nextZoomPercent);
+      });
+    },
+    [centerDesktopViewport, isMobileViewport],
   );
 
   const getDrawPoint = useCallback((clientX: number, clientY: number) => {
@@ -1643,26 +1746,30 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       centeredScaling: false,
       keepRatio: false,
       shouldOverdrawWholeArea: false,
-      anchorSize: 24,
-      borderStroke: "#3b82f6",
+      anchorSize: 18,
+      borderStroke: SELECTION_ACCENT_COLOR,
       borderStrokeWidth: 1,
       borderDash: [4, 4],
-      anchorStroke: "#3b82f6",
-      anchorStrokeWidth: 1.5,
-      anchorFill: "#ffffff",
+      anchorStroke: SELECTION_ACCENT_COLOR,
+      anchorStrokeWidth: 1.25,
+      anchorFill: SELECTION_ACCENT_COLOR,
       anchorCornerRadius: 999,
       boundBoxFunc: (oldBox, newBox) => {
         if (newBox.width < MIN_TRANSFORM_SIZE || newBox.height < MIN_TRANSFORM_SIZE) {
           return oldBox;
         }
-        return newBox;
+
+        return {
+          ...newBox,
+          ...clampGuideBoundsToCanvas(newBox, canvasSize),
+        };
       },
     });
 
     transformer.anchorStyleFunc((anchor) => {
       anchor.opacity(1);
-      anchor.stroke("#3b82f6");
-      anchor.fill("#ffffff");
+      anchor.stroke(SELECTION_ACCENT_COLOR);
+      anchor.fill(SELECTION_ACCENT_COLOR);
       anchor.cornerRadius(999);
     });
 
@@ -1738,7 +1845,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       guideLayerRef.current = null;
       currentShapeRefs.clear();
     };
-  }, [canvasSize.width, canvasSize.height, clearAlignmentGuides, onSelectElement, scale, stageActivateEvent, stagePressEvent]);
+  }, [canvasSize, clearAlignmentGuides, onSelectElement, scale, stageActivateEvent, stagePressEvent]);
 
   useEffect(() => {
     return () => {
@@ -1872,6 +1979,18 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           clearAlignmentGuides();
         }
 
+        const clampedPosition = clampGuideBoundsPosition(
+          {
+            ...bounds,
+            x: nextX,
+            y: nextY,
+          },
+          canvasSize,
+        );
+
+        nextX = clampedPosition.x;
+        nextY = clampedPosition.y;
+
         shape.position({ x: nextX, y: nextY });
 
         layer.draw();
@@ -1880,15 +1999,25 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       shape.on("dragend", () => {
         clearAlignmentGuides();
         const pos = shape.position();
+        const bounds = getNodeGuideBounds(shape, element.width, element.height);
         const motion = getActiveAnimationState(element);
         const nextX = (gridEnabled ? snap(pos.x, GRID_SIZE) : pos.x) - motion.x;
         const nextY = (gridEnabled ? snap(pos.y, GRID_SIZE) : pos.y) - motion.y;
+        const clampedBounds = clampGuideBoundsPosition(
+          {
+            x: nextX,
+            y: nextY,
+            width: bounds.width,
+            height: bounds.height,
+          },
+          canvasSize,
+        );
 
-        shape.position({ x: nextX, y: nextY });
+        shape.position({ x: clampedBounds.x, y: clampedBounds.y });
 
         onUpdateElement(element.id, {
-          x: Math.round(nextX),
-          y: Math.round(nextY),
+          x: Math.round(clampedBounds.x),
+          y: Math.round(clampedBounds.y),
         });
 
         if (inlineEditor?.id === element.id && shape instanceof Konva.Text) {
@@ -2006,11 +2135,21 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         previewX -= motion.x;
         previewY -= motion.y;
 
+        const clampedPreviewBounds = clampGuideBoundsToCanvas(
+          {
+            x: previewX,
+            y: previewY,
+            width: previewWidth,
+            height: previewHeight,
+          },
+          canvasSize,
+        );
+
         scheduleTransformPreview(session.originalElement.id, {
-          x: Math.round(previewX),
-          y: Math.round(previewY),
-          width: Math.round(previewWidth),
-          height: Math.round(previewHeight),
+          x: Math.round(clampedPreviewBounds.x),
+          y: Math.round(clampedPreviewBounds.y),
+          width: Math.round(clampedPreviewBounds.width),
+          height: Math.round(clampedPreviewBounds.height),
           ...(session.originalElement.type === "text" && previewFontSize
             ? { fontSize: previewFontSize }
             : {}),
@@ -2139,6 +2278,21 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           nextWidth = Math.max(GRID_SIZE, snap(nextWidth, GRID_SIZE));
           nextHeight = Math.max(GRID_SIZE, snap(nextHeight, GRID_SIZE));
         }
+
+        const clampedFinalBounds = clampGuideBoundsToCanvas(
+          {
+            x: nextX,
+            y: nextY,
+            width: nextWidth,
+            height: nextHeight,
+          },
+          canvasSize,
+        );
+
+        nextX = clampedFinalBounds.x;
+        nextY = clampedFinalBounds.y;
+        nextWidth = clampedFinalBounds.width;
+        nextHeight = clampedFinalBounds.height;
 
         shape.position({ x: nextX, y: nextY });
 
@@ -2519,14 +2673,15 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
     if (clientWidth <= 0 || clientHeight <= 0) return;
 
-    const paddingX = isMobileViewport ? 24 : 140;
-    const paddingY = isMobileViewport ? bottomInset + 36 : 110;
+    const { width: csW, height: csH } = canvasSizeRef.current;
+    const paddingX = isMobileViewport ? 24 : DESKTOP_VIEWPORT_PADDING_X;
+    const paddingY = isMobileViewport ? bottomInset + 36 : DESKTOP_VIEWPORT_PADDING_Y;
 
     const usableWidth = Math.max(1, clientWidth - paddingX);
     const usableHeight = Math.max(1, clientHeight - paddingY);
 
-    const scaleX = usableWidth / canvasSize.width;
-    const scaleY = usableHeight / canvasSize.height;
+    const scaleX = usableWidth / csW;
+    const scaleY = usableHeight / csH;
     const fitZoom = Math.min(scaleX, scaleY) * 100;
 
     const rawFitZoom = Math.max(
@@ -2537,6 +2692,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
     fitZoomRef.current = nextZoom;
     onZoomChange(nextZoom);
+    setHasFit((prev) => prev ? prev : true);
 
     if (isMobileViewport) {
       setMobilePan((currentPan) => {
@@ -2545,15 +2701,20 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         }
         return clampMobilePan(currentPan, nextZoom);
       });
+    } else {
+      scheduleDesktopViewportCenter(nextZoom);
     }
   }, [
     bottomInset,
-    canvasSize.width,
-    canvasSize.height,
+    // canvasSize.width / canvasSize.height intentionally omitted — read from canvasSizeRef.
+    // This keeps fitToScreen stable across canvas size changes so useLayoutEffect([fitToScreen])
+    // does NOT fire during dialog close animations. The viewportResetKey effect handles
+    // refit-on-load explicitly.
     clampMobilePan,
     getCenteredMobilePan,
     isMobileViewport,
     onZoomChange,
+    scheduleDesktopViewportCenter,
   ]);
 
   useLayoutEffect(() => {
@@ -2591,6 +2752,41 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     };
   }, [fitToScreen]);
 
+  /**
+   * On every explicit viewport reset (design load / template apply):
+   * 1. Synchronously zero the scroll position BEFORE paint so the browser never shows a stale
+   *    scroll offset against the new canvas size.
+   * 2. Call fitToScreen() synchronously (container is already mounted and sized) so the zoom
+   *    and centred scroll are committed in the same render cycle.
+   */
+  useLayoutEffect(() => {
+    if (viewportResetKey === 0) return; // skip on initial mount; useLayoutEffect([fitToScreen]) handles that
+
+    hasManualMobileTransformRef.current = false;
+    setHasFit(false);
+
+    // Immediately reset scroll so the user never sees the canvas at a stale offset.
+    const viewport = desktopViewportRef.current;
+    if (viewport && !isMobileViewport) {
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
+    }
+
+    // fitToScreen reads containerRef dimensions. If it reports zero (layout not ready),
+    // retry once in the next frame. With the 250ms setTimeout delay in EditorShell this
+    // should never be needed, but it's a safety net.
+    const container = containerRef.current;
+    if (container && container.getBoundingClientRect().width > 0) {
+      fitToScreen();
+    } else {
+      const rafId = requestAnimationFrame(() => fitToScreen());
+      return () => cancelAnimationFrame(rafId);
+    }
+  // isMobileViewport and fitToScreen are stable across the design-load render;
+  // we only want this to fire when viewportResetKey actually changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportResetKey]);
+
   useEffect(() => {
     if (!isMobileViewport) return;
 
@@ -2601,6 +2797,14 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       return clampMobilePan(currentPan, zoom);
     });
   }, [clampMobilePan, getCenteredMobilePan, isMobileViewport, zoom]);
+
+  useEffect(() => {
+    return () => {
+      if (desktopViewportCenterFrameRef.current != null) {
+        cancelAnimationFrame(desktopViewportCenterFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -2733,6 +2937,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     canvasSize.label === "Instagram Story"
       ? "9 / 16"
       : `${canvasSize.width} / ${canvasSize.height}`;
+  const desktopViewportWidth = `max(100%, ${Math.round(canvasSize.width * scale + DESKTOP_VIEWPORT_PADDING_X)}px)`;
+  const desktopViewportHeight = `max(100%, ${Math.round(canvasSize.height * scale + DESKTOP_VIEWPORT_PADDING_Y)}px)`;
 
   const handleMobileViewportTouchStartCapture = useCallback(
     (event: React.TouchEvent<HTMLDivElement>) => {
@@ -2964,12 +3170,12 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
             textAlign: inlineEditor.textAlign,
             textTransform: inlineEditor.textTransform,
             background: "rgba(255, 255, 255, 0.98)",
-            border: "1px solid #bfdbfe",
+            border: `1px solid ${SELECTION_ACCENT_COLOR}`,
             borderRadius: 2,
             padding: `${Math.max(2, Math.round(scale * 2))}px ${Math.max(3, Math.round(scale * 6))}px`,
             margin: 0,
             outline: "none",
-            boxShadow: "0 0 0 1px rgba(59, 130, 246, 0.08)",
+            boxShadow: `0 0 0 1px ${INLINE_EDITOR_HIGHLIGHT}`,
             overflow: "hidden",
             zIndex: 24,
             userSelect: "text",
@@ -3009,19 +3215,19 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         </div>
       ) : (
         <div
+          ref={desktopViewportRef}
           className="absolute inset-0 overflow-y-auto overflow-x-auto"
           style={{
             WebkitOverflowScrolling: "touch",
             overscrollBehavior: "contain",
           }}
         >
-          <div
-            className="min-w-full min-h-full flex items-start justify-center"
+        <div
+            className="flex items-center justify-center"
             style={{
-              paddingLeft: 40,
-              paddingRight: 40,
-              paddingTop: 56,
-              paddingBottom: 40,
+              width: desktopViewportWidth,
+              height: desktopViewportHeight,
+              visibility: hasFit ? "visible" : "hidden",
             }}
           >
             {renderCanvasSurface("translateZ(0)")}
@@ -3078,7 +3284,8 @@ function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps
     prev.drawSettings === next.drawSettings &&
     prev.finishDrawingRequest === next.finishDrawingRequest &&
     prev.onDrawingCommitted === next.onDrawingCommitted &&
-    prev.onExportCanvasReady === next.onExportCanvasReady
+    prev.onExportCanvasReady === next.onExportCanvasReady &&
+    prev.viewportResetKey === next.viewportResetKey
   );
 }
 
