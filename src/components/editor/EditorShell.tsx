@@ -1584,11 +1584,15 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setMobileLayerSheetOpen(false);
       setMobileLayerSheetLocked(false);
       setRequestedMobileTab(null);
-      // Delay past the dialog close animation (200ms) so scroll-lock is fully released
-      // and the container has stable, correct dimensions when fitToScreen runs.
-      window.setTimeout(() => {
-        setViewportResetKey((current) => current + 1);
-      }, 250);
+      // Wait for canvas to render, then set zoom to 100%, then fit to screen
+      setTimeout(() => {
+        setZoom(100);
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            setViewportResetKey((current) => current + 1);
+          });
+        }, 500);
+      }, 50);
     },
     [canvasSize, clearElementPreview, pushHistory],
   );
@@ -1696,11 +1700,15 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setMobileLayerSheetLocked(false);
         setRequestedMobileTab(null);
         setShowDesignManager(false);
-        // Delay past the Radix Dialog 200ms close animation so the body scroll-lock is
-        // fully released and the canvas container has stable dimensions for fitToScreen.
-        window.setTimeout(() => {
-          setViewportResetKey((current) => current + 1);
-        }, 250);
+        // Wait for canvas to render, then set zoom to 100%, then fit to screen
+        setTimeout(() => {
+          setZoom(100);
+          setTimeout(() => {
+            requestAnimationFrame(() => {
+              setViewportResetKey((current) => current + 1);
+            });
+          }, 100);
+        }, 50);
 
         // toast.success("Canvas design loaded.");
       } catch {

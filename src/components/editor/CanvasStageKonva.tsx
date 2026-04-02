@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useLayoutEffect,
 } from "react";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import Konva from "konva";
 import type { ActiveTool, CanvasElement, DrawSettings } from "./EditorShell";
 import { getLinearGradientPoints as getSharedLinearGradientPoints, getRadialGradientGeometry, parseLinearGradient as parseSharedLinearGradient, parseRadialGradient } from "./backgroundUtils";
@@ -976,7 +976,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const fitZoomRef = useRef(zoom);
   const hasManualMobileTransformRef = useRef(false);
   const desktopViewportCenterFrameRef = useRef<number | null>(null);
-  const [hasFit, setHasFit] = React.useState(false);
+  const [hasFit, setHasFit] = React.useState(true);
   // Keep a ref to canvasSize so fitToScreen/centerDesktopViewport can read the latest
   // value without being recreated every time canvasSize changes. This prevents
   // useLayoutEffect([fitToScreen]) from firing during dialog close animations.
@@ -2685,8 +2685,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     const fitZoom = Math.min(scaleX, scaleY) * 100;
 
     const rawFitZoom = Math.max(
-      isMobileViewport ? MIN_ZOOM_PERCENT : 20,
-      Math.min(Math.round(fitZoom), isMobileViewport ? 100 : 140),
+      isMobileViewport ? MIN_ZOOM_PERCENT : 10,
+      Math.round(fitZoom),
     );
     const nextZoom = clampZoomPercent(rawFitZoom, isMobileViewport);
 
@@ -3240,6 +3240,13 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           <div className="px-3 pt-3 pb-2 text-[11px] font-semibold text-[#6b7280] tabular-nums">
             {zoom}%
           </div>
+          <button
+            onClick={() => onZoomChange(fitZoomRef.current)}
+            title="Fit to screen"
+            className="flex h-9 w-10 items-center justify-center text-[#667085] hover:bg-[#f5f7fa]"
+          >
+            <Maximize2 size={16} strokeWidth={1.6} />
+          </button>
           <button
             onClick={() => onZoomChange(clampZoomPercent(zoom + 10, false))}
             className="flex h-9 w-10 items-center justify-center text-[#667085] hover:bg-[#f5f7fa]"
