@@ -9,11 +9,12 @@ import { MobileBottomDock } from "./MobileBottomDock";
 import { LayersPanel } from "./LayersPanel";
 import { MobileLayerSheet, type MobileLayerSheetSection } from "./MobileLayerSheet";
 import { useTextEditStore } from "@/stores/useTextEditStore";
-import type { TemplateApplyPayload } from "./templateTypes";
+import type { TemplateApplyPayload, TemplateViewportState } from "./templateTypes";
 import { CanvasDesignManager } from "./CanvasDesignManager";
 import {
   createCanvasDesign,
   deleteCanvasDesign,
+  getCanvasDesignById,
   listCanvasDesigns,
   renameCanvasDesign,
   updateCanvasDesign,
@@ -791,6 +792,8 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [selectedLayerId, setSelectedLayerId] = React.useState<string | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = React.useState(false);
   const [zoom, setZoom] = React.useState(100);
+  const [viewportState, setViewportState] = React.useState<TemplateViewportState | null>(null);
+  const [restoredViewportState, setRestoredViewportState] = React.useState<TemplateViewportState | null>(null);
   const [viewportResetKey, setViewportResetKey] = React.useState(0);
   const [canvasSize, setCanvasSize] = React.useState<CanvasSizePreset>(safeInitialSize);
   const [canvasBackground, setCanvasBackground] = React.useState("#FFFFFF");
@@ -924,10 +927,18 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       mode,
       canvasSize,
       canvasBackground,
-      elements,
+      viewportState,
+      elements: elements.map((element) =>
+        elementPreviewById[element.id]
+          ? {
+              ...element,
+              ...elementPreviewById[element.id],
+            }
+          : element,
+      ),
       thumbnailDataUrl: exportCanvasSnapshotRef.current?.() ?? undefined,
     }),
-    [canvasBackground, canvasSize, elements, getResolvedCurrentDesignName, mode],
+    [canvasBackground, canvasSize, elementPreviewById, elements, getResolvedCurrentDesignName, mode, viewportState],
   );
 
   const handleExportCanvasReady = useCallback((exporter: (() => string | null) | null) => {
@@ -1017,7 +1028,6 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   }
 
   if (activeTool === tool && sidebarExpanded) {
-    setSidebarExpanded(false);
     setActiveTool("select");
   } else {
     if (tool === "draw") {
@@ -1543,6 +1553,8 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         return next;
       });
 
+      setViewportState(null);
+      setRestoredViewportState(null);
       setCanvasSize(preset);
     },
     [canvasSize, pushHistory]
@@ -1576,6 +1588,8 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setCurrentDesignNameSizeKey(getCanvasSizeKey(nextCanvasSize));
       setCanvasSize(nextCanvasSize);
       setCanvasBackground(nextBackground);
+      setViewportState(null);
+      setRestoredViewportState(null);
       setElements(normalizedElements);
       setCurrentDesignId(null);
       pushHistory(normalizedElements, nextBackground);
@@ -1654,8 +1668,11 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       setActiveDesignAction({ type: "load", id: design.id });
 
       try {
-        const nextCanvasSize = resolveSavedDesignCanvasSize(design, canvasSize);
-        const rawElements = Array.isArray(design.json.elements) ? design.json.elements : [];
+        const resolvedDesign = (await getCanvasDesignById(design.id)) ?? design;
+        const nextCanvasSize = resolveSavedDesignCanvasSize(resolvedDesign, canvasSize);
+        const rawElements = Array.isArray(resolvedDesign.json.elements)
+          ? resolvedDesign.json.elements
+          : [];
         const normalizedElements = reindexLayers(
           rawElements
             .reduce<CanvasElement[]>((accumulator, element, index) => {
@@ -1665,18 +1682,25 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
               return accumulator;
             }, [])
-            .map((element) => clampLayerToCanvas(element, nextCanvasSize))
             .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0)),
         );
-        const nextBackground = design.json.canvasBackground || "#FFFFFF";
+        const nextBackground = resolvedDesign.json.canvasBackground || "#FFFFFF";
+        const nextViewportState = resolvedDesign.json.viewportState ?? viewportState ?? null;
 
         clearElementPreview();
         clearTextEditRequest();
         setSelectedLayerId(null);
         setCanvasSize(nextCanvasSize);
         setCanvasBackground(nextBackground);
-        setDesignTitle(design.name);
-        setCurrentDesignName(design.name);
+        setViewportState(nextViewportState);
+        setRestoredViewportState(nextViewportState);
+        setZoom(
+          nextViewportState?.zoom != null
+            ? Math.round(nextViewportState.zoom)
+            : zoom,
+        );
+        setDesignTitle(resolvedDesign.name);
+        setCurrentDesignName(resolvedDesign.name);
         setCurrentDesignNameSizeKey(getCanvasSizeKey(nextCanvasSize));
         setElements(normalizedElements);
         setHistory([
@@ -1686,7 +1710,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           },
         ]);
         setHistoryIndex(0);
-        setCurrentDesignId(design.id);
+        setCurrentDesignId(resolvedDesign.id);
         // Preserve the user's current zoom level instead of resetting to 100%.
         setCurrentTime(0);
         setIsPlaying(false);
@@ -1696,11 +1720,6 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setMobileLayerSheetLocked(false);
         setRequestedMobileTab(null);
         setShowDesignManager(false);
-        // Delay past the Radix Dialog 200ms close animation so the body scroll-lock is
-        // fully released and the canvas container has stable dimensions for fitToScreen.
-        window.setTimeout(() => {
-          setViewportResetKey((current) => current + 1);
-        }, 250);
 
         // toast.success("Canvas design loaded.");
       } catch {
@@ -1709,7 +1728,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         setActiveDesignAction({ type: null, id: null });
       }
     },
-    [canvasSize, clearElementPreview, clearTextEditRequest, currentDesignId],
+    [canvasSize, clearElementPreview, clearTextEditRequest, currentDesignId, viewportState, zoom],
   );
 
   const handleRenameSavedDesign = useCallback(
@@ -2192,6 +2211,9 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
           onExportCanvasReady={handleExportCanvasReady}
+          restoredViewportState={restoredViewportState}
+          onViewportStateChange={setViewportState}
+          onViewportRestoreHandled={() => setRestoredViewportState(null)}
           viewportResetKey={viewportResetKey}
         />
         </div>
@@ -2340,6 +2362,9 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           finishDrawingRequest={finishDrawingRequest}
           onDrawingCommitted={handleDrawingCommitted}
           onExportCanvasReady={handleExportCanvasReady}
+          restoredViewportState={restoredViewportState}
+          onViewportStateChange={setViewportState}
+          onViewportRestoreHandled={() => setRestoredViewportState(null)}
           viewportResetKey={viewportResetKey}
         />
 

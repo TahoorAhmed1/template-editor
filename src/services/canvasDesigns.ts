@@ -7,6 +7,7 @@ import type {
 import type {
   TemplateJson,
   TemplateRecord,
+  TemplateViewportState,
 } from "@/components/editor/templateTypes";
 
 const LOCAL_STORAGE_KEY = "canvas-designs.v1";
@@ -17,6 +18,7 @@ export interface CanvasDesignSnapshot {
   canvasSize: CanvasSizePreset;
   canvasBackground: string;
   elements: CanvasElement[];
+  viewportState?: TemplateViewportState;
   thumbnailDataUrl?: string;
 }
 
@@ -121,6 +123,7 @@ const mergeTemplateJson = (
   ...(secondary ?? {}),
   ...(primary ?? {}),
   canvasDimensions: mergeCanvasDimensions(primary?.canvasDimensions, secondary?.canvasDimensions),
+  canvasPreset: primary?.canvasPreset ?? secondary?.canvasPreset,
   elements:
     Array.isArray(primary?.elements) && primary.elements.length > 0
       ? primary.elements
@@ -135,6 +138,7 @@ const mergeTemplateJson = (
       : undefined,
   thumbnailDataUrl: primary?.thumbnailDataUrl || secondary?.thumbnailDataUrl,
   canvasBackground: primary?.canvasBackground || secondary?.canvasBackground,
+  viewportState: primary?.viewportState ?? secondary?.viewportState,
   name: primary?.name || secondary?.name,
   source: primary?.source || secondary?.source,
   savedAt: primary?.savedAt || secondary?.savedAt,
@@ -151,6 +155,42 @@ const deriveDimensionFromCanvasDimensions = (
     return `${canvasDimensions.width}x${canvasDimensions.height}`;
   }
   return fallback;
+};
+
+const applyAuthoritativeCanvasPayload = (
+  record: CanvasDesignRecord,
+  authoritative?: CanvasDesignRecord | null,
+): CanvasDesignRecord => {
+  if (!authoritative) {
+    return record;
+  }
+
+  const json: TemplateJson = {
+    ...record.json,
+    elements: authoritative.json.elements,
+    lockedElementIds: authoritative.json.lockedElementIds,
+    thumbnailDataUrl:
+      authoritative.json.thumbnailDataUrl ?? record.json.thumbnailDataUrl,
+    canvasBackground:
+      authoritative.json.canvasBackground ?? record.json.canvasBackground,
+    viewportState:
+      authoritative.json.viewportState ?? record.json.viewportState,
+    canvasDimensions:
+      authoritative.json.canvasDimensions ?? record.json.canvasDimensions,
+    canvasPreset:
+      authoritative.json.canvasPreset ?? record.json.canvasPreset,
+    source: authoritative.json.source ?? record.json.source,
+    savedAt: authoritative.json.savedAt ?? record.json.savedAt,
+    version: authoritative.json.version ?? record.json.version,
+    editorMode: authoritative.json.editorMode ?? record.json.editorMode,
+    aspectRatio: authoritative.json.aspectRatio ?? record.json.aspectRatio,
+  };
+
+  return {
+    ...record,
+    dimension: authoritative.dimension ?? record.dimension,
+    json,
+  };
 };
 
 const mergeCanvasDesignRecords = (
@@ -234,7 +274,9 @@ const mergeDesignLists = (
   });
 
   secondary.forEach((design) => {
-    next.set(design.id, mergeCanvasDesignRecords(next.get(design.id) ?? design, next.get(design.id) ? design : null));
+    const existing = next.get(design.id) ?? null;
+    const merged = mergeCanvasDesignRecords(existing ?? design, existing ? design : null);
+    next.set(design.id, existing ? applyAuthoritativeCanvasPayload(merged, existing) : merged);
   });
 
   return sortDesigns(Array.from(next.values()));
@@ -279,7 +321,12 @@ const buildPersistPayload = (snapshot: CanvasDesignSnapshot) => {
       width: snapshot.canvasSize.width,
       height: snapshot.canvasSize.height,
     },
+    canvasPreset: {
+      label: snapshot.canvasSize.label,
+      description: snapshot.canvasSize.description,
+    },
     canvasBackground: snapshot.canvasBackground,
+    viewportState: snapshot.viewportState,
     thumbnailDataUrl: snapshot.thumbnailDataUrl,
   };
 
@@ -313,6 +360,26 @@ const buildFallbackRecord = (
 const getExistingLocalDesign = (id: string) =>
   readLocalDesigns().find((design) => design.id === id) ?? null;
 
+export const getCanvasDesignById = async (
+  id: string,
+): Promise<CanvasDesignRecord | null> => {
+  const localDesign = getExistingLocalDesign(id);
+  if (localDesign) {
+    return localDesign;
+  }
+
+  try {
+    const response = await API.get(`/client/template/${id}`);
+    const remoteDesign = unwrapRecords(response?.data)
+      .map(normalizeDesignRecord)
+      .filter((design): design is CanvasDesignRecord => Boolean(design))[0] ?? null;
+
+    return remoteDesign;
+  } catch {
+    return null;
+  }
+};
+
 export const listCanvasDesigns = async (): Promise<CanvasDesignRecord[]> => {
   const localDesigns = readLocalDesigns();
 
@@ -343,12 +410,10 @@ export const createCanvasDesign = async (
       unwrapRecords(response?.data)
         .map(normalizeDesignRecord)
         .filter((design): design is CanvasDesignRecord => Boolean(design))[0];
-    // Use API response for ID and server-side metadata, but keep our canvas
-    // dimensions authoritative — the API may return stale canvasDimensions.
+    // Use API response for ID and server-side metadata, but keep our locally saved
+    // canvas payload authoritative — the API may echo stale element JSON.
     const merged = savedResponse ? mergeCanvasDesignRecords(savedResponse, fallback) : null;
-    const saved: CanvasDesignRecord = merged
-      ? { ...merged, dimension: fallback.dimension, json: { ...merged.json, canvasDimensions: fallback.json.canvasDimensions } }
-      : fallback;
+    const saved: CanvasDesignRecord = merged ? applyAuthoritativeCanvasPayload(merged, fallback) : fallback;
 
     upsertLocalDesign(saved);
     return saved;
@@ -371,11 +436,9 @@ export const updateCanvasDesign = async (
       unwrapRecords(response?.data)
         .map(normalizeDesignRecord)
         .filter((design): design is CanvasDesignRecord => Boolean(design))[0];
-    // Keep our canvas dimensions authoritative; API response provides only metadata.
+    // Keep our locally saved canvas payload authoritative; API response provides metadata.
     const merged = updatedResponse ? mergeCanvasDesignRecords(updatedResponse, fallback) : null;
-    const updated: CanvasDesignRecord = merged
-      ? { ...merged, dimension: fallback.dimension, json: { ...merged.json, canvasDimensions: fallback.json.canvasDimensions } }
-      : fallback;
+    const updated: CanvasDesignRecord = merged ? applyAuthoritativeCanvasPayload(merged, fallback) : fallback;
 
     upsertLocalDesign(updated);
     return updated;
