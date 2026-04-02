@@ -9,6 +9,7 @@ import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import Konva from "konva";
 import type { ActiveTool, CanvasElement, DrawSettings } from "./EditorShell";
 import { getLinearGradientPoints as getSharedLinearGradientPoints, getRadialGradientGeometry, parseLinearGradient as parseSharedLinearGradient, parseRadialGradient } from "./backgroundUtils";
+import type { TemplateViewportState } from "./templateTypes";
 import { LayerEffectOverlay } from "./LayerEffectOverlay";
 import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
 import { useTextEditStore } from "@/stores/useTextEditStore";
@@ -43,6 +44,9 @@ interface CanvasStageProps {
   finishDrawingRequest?: number;
   onDrawingCommitted?: (dataUrl: string | null) => void;
   onExportCanvasReady?: (exporter: (() => string | null) | null) => void;
+  restoredViewportState?: TemplateViewportState | null;
+  onViewportStateChange?: (state: TemplateViewportState) => void;
+  onViewportRestoreHandled?: () => void;
   viewportResetKey?: number;
 }
 
@@ -214,6 +218,45 @@ function clampGuideBoundsToCanvas(
     },
     canvasSize,
   );
+}
+
+function clampNodePositionToCanvas(
+  node: Konva.Node,
+  position: ViewportPoint,
+  fallbackWidth: number,
+  fallbackHeight: number,
+  canvasSize: Pick<CanvasStageProps["canvasSize"], "width" | "height">,
+): ViewportPoint {
+  if (node instanceof Konva.Circle) {
+    const radius = node.radius() * Math.abs(node.scaleX?.() ?? 1);
+
+    return {
+      x: clamp(position.x, radius, Math.max(radius, canvasSize.width - radius)),
+      y: clamp(position.y, radius, Math.max(radius, canvasSize.height - radius)),
+    };
+  }
+
+  const scaleX = Math.abs(node.scaleX?.() ?? 1);
+  const scaleY = Math.abs(node.scaleY?.() ?? 1);
+  const width = Math.max(1, (node.width?.() ?? fallbackWidth) * scaleX);
+  const height = Math.max(1, (node.height?.() ?? fallbackHeight) * scaleY);
+
+  return {
+    x: clamp(position.x, 0, Math.max(0, canvasSize.width - width)),
+    y: clamp(position.y, 0, Math.max(0, canvasSize.height - height)),
+  };
+}
+
+function setNodePositionFromBounds(node: Konva.Node, bounds: GuideBounds) {
+  if (node instanceof Konva.Circle) {
+    node.position({
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    });
+    return;
+  }
+
+  node.position({ x: bounds.x, y: bounds.y });
 }
 
 function getOppositeCorner(bounds: GuideBounds, activeAnchor: string | null): ViewportPoint {
@@ -646,11 +689,28 @@ function getStableImageTransformBounds(
 }
 
 function getElementGuideBounds(element: CanvasElement): GuideBounds {
+  const renderable = getRenderableLayer(element);
+  const width = Math.max(1, renderable.width * (renderable.scale ?? 1));
+  const height = Math.max(1, renderable.height * (renderable.scale ?? 1));
+  const angle = ((renderable.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  const corners = [
+    { x: 0, y: 0 },
+    { x: width * cos, y: width * sin },
+    { x: -height * sin, y: height * cos },
+    { x: width * cos - height * sin, y: width * sin + height * cos },
+  ];
+
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+
   return {
-    x: element.x,
-    y: element.y,
-    width: element.width,
-    height: element.height,
+    x: renderable.x + Math.min(...xs),
+    y: renderable.y + Math.min(...ys),
+    width: Math.max(1, Math.max(...xs) - Math.min(...xs)),
+    height: Math.max(1, Math.max(...ys) - Math.min(...ys)),
   };
 }
 
@@ -962,6 +1022,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   finishDrawingRequest = 0,
   onDrawingCommitted,
   onExportCanvasReady,
+  restoredViewportState = null,
+  onViewportStateChange,
+  onViewportRestoreHandled,
   viewportResetKey = 0,
 }) => {
   const requestedTextEditId = useTextEditStore((state) => state.requestedElementId);
@@ -975,6 +1038,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const pinchSessionRef = useRef<PinchSession | null>(null);
   const fitZoomRef = useRef(zoom);
   const hasManualMobileTransformRef = useRef(false);
+  const hasHandledInitialCanvasSizeRef = useRef(false);
+  const persistedViewportActiveRef = useRef(false);
+  const lastViewportStateKeyRef = useRef("");
   const desktopViewportCenterFrameRef = useRef<number | null>(null);
   const [hasFit, setHasFit] = React.useState(true);
   // Keep a ref to canvasSize so fitToScreen/centerDesktopViewport can read the latest
@@ -1015,6 +1081,37 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   const [pulseProgress, setPulseProgress] = useState(0);
   const [mobilePan, setMobilePan] = useState<ViewportPoint>({ x: 0, y: 0 });
 
+  const reportViewportState = useCallback(
+    (nextState: TemplateViewportState) => {
+      if (!onViewportStateChange) return;
+
+      const normalizedState: TemplateViewportState = {
+        zoom: nextState.zoom != null ? Math.round(nextState.zoom) : undefined,
+        desktopScroll: nextState.desktopScroll
+          ? {
+              left: Math.round(nextState.desktopScroll.left),
+              top: Math.round(nextState.desktopScroll.top),
+            }
+          : undefined,
+        mobilePan: nextState.mobilePan
+          ? {
+              x: Math.round(nextState.mobilePan.x),
+              y: Math.round(nextState.mobilePan.y),
+            }
+          : undefined,
+      };
+
+      const nextKey = JSON.stringify(normalizedState);
+      if (lastViewportStateKeyRef.current === nextKey) {
+        return;
+      }
+
+      lastViewportStateKeyRef.current = nextKey;
+      onViewportStateChange(normalizedState);
+    },
+    [onViewportStateChange],
+  );
+
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
@@ -1026,6 +1123,45 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   useEffect(() => {
     hiddenOverlayElementIdsRef.current = hiddenOverlayElementIds;
   }, [hiddenOverlayElementIds]);
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      return;
+    }
+
+    reportViewportState({
+      zoom,
+      mobilePan,
+    });
+  }, [isMobileViewport, mobilePan, reportViewportState, zoom]);
+
+  useEffect(() => {
+    if (isMobileViewport) {
+      return;
+    }
+
+    const viewport = desktopViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const handleScroll = () => {
+      reportViewportState({
+        zoom,
+        desktopScroll: {
+          left: viewport.scrollLeft,
+          top: viewport.scrollTop,
+        },
+      });
+    };
+
+    handleScroll();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+    };
+  }, [isMobileViewport, reportViewportState, viewportResetKey, zoom]);
 
   const clearOverlayRestoreTimeout = useCallback((elementId: string) => {
     const timeoutId = overlayRestoreTimeoutsRef.current.get(elementId);
@@ -1928,6 +2064,15 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       layer.add(shape as Konva.Shape | Konva.Group);
       shape.zIndex(index);
       shapeRefs.current.set(element.id, shape);
+      shape.dragBoundFunc((position) =>
+        clampNodePositionToCanvas(
+          shape,
+          position,
+          element.width,
+          element.height,
+          canvasSize,
+        ),
+      );
 
       shape.on(
         stagePressEvent,
@@ -1991,7 +2136,11 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         nextX = clampedPosition.x;
         nextY = clampedPosition.y;
 
-        shape.position({ x: nextX, y: nextY });
+        setNodePositionFromBounds(shape, {
+          ...bounds,
+          x: nextX,
+          y: nextY,
+        });
 
         layer.draw();
       });
@@ -2013,7 +2162,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
           canvasSize,
         );
 
-        shape.position({ x: clampedBounds.x, y: clampedBounds.y });
+        setNodePositionFromBounds(shape, clampedBounds);
 
         onUpdateElement(element.id, {
           x: Math.round(clampedBounds.x),
@@ -2294,7 +2443,12 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         nextWidth = clampedFinalBounds.width;
         nextHeight = clampedFinalBounds.height;
 
-        shape.position({ x: nextX, y: nextY });
+        setNodePositionFromBounds(shape, {
+          x: nextX,
+          y: nextY,
+          width: nextWidth,
+          height: nextHeight,
+        });
 
         if (
           shape instanceof Konva.Text ||
@@ -2663,7 +2817,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     [closeInlineEditing],
   );
 
-  const fitToScreen = useCallback(() => {
+  const fitToScreen = useCallback((options?: { syncCenter?: boolean }) => {
+    persistedViewportActiveRef.current = false;
+
     const el = containerRef.current;
     if (!el) return;
 
@@ -2701,6 +2857,10 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         }
         return clampMobilePan(currentPan, nextZoom);
       });
+    } else if (options?.syncCenter) {
+      // Synchronous centering: set scroll directly before browser paint so the canvas
+      // never appears at a stale (e.g. top-left) position after a design load.
+      centerDesktopViewport(nextZoom);
     } else {
       scheduleDesktopViewportCenter(nextZoom);
     }
@@ -2710,6 +2870,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     // This keeps fitToScreen stable across canvas size changes so useLayoutEffect([fitToScreen])
     // does NOT fire during dialog close animations. The viewportResetKey effect handles
     // refit-on-load explicitly.
+    centerDesktopViewport,
     clampMobilePan,
     getCenteredMobilePan,
     isMobileViewport,
@@ -2718,14 +2879,123 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
   ]);
 
   useLayoutEffect(() => {
+    if (!restoredViewportState) {
+      return;
+    }
+
+    hasManualMobileTransformRef.current = false;
+    setHasFit(false);
+    persistedViewportActiveRef.current = true;
+
+    const nextZoom = clampZoomPercent(restoredViewportState.zoom ?? zoom, isMobileViewport);
+    fitZoomRef.current = nextZoom;
+
+    if (nextZoom !== zoom) {
+      onZoomChange(nextZoom);
+    }
+
+    if (isMobileViewport) {
+      hasManualMobileTransformRef.current = Boolean(restoredViewportState.mobilePan);
+      setMobilePan(
+        restoredViewportState.mobilePan
+          ? clampMobilePan(restoredViewportState.mobilePan, nextZoom)
+          : getCenteredMobilePan(nextZoom),
+      );
+      setHasFit(true);
+      onViewportRestoreHandled?.();
+      return;
+    }
+
+    const rafId = requestAnimationFrame(() => {
+      const viewport = desktopViewportRef.current;
+      if (!viewport) {
+        return;
+      }
+
+      const containerW = viewport.clientWidth;
+      const containerH = viewport.clientHeight;
+      if (containerW <= 0 || containerH <= 0) {
+        return;
+      }
+
+      const { width: csW, height: csH } = canvasSizeRef.current;
+      const restoredScale = nextZoom / 100;
+      const innerW = Math.max(
+        containerW,
+        Math.round(csW * restoredScale + DESKTOP_VIEWPORT_PADDING_X),
+      );
+      const innerH = Math.max(
+        containerH,
+        Math.round(csH * restoredScale + DESKTOP_VIEWPORT_PADDING_Y),
+      );
+      const maxScrollLeft = Math.max(0, innerW - containerW);
+      const maxScrollTop = Math.max(0, innerH - containerH);
+      const targetLeft = clamp(
+        Math.round(restoredViewportState.desktopScroll?.left ?? maxScrollLeft / 2),
+        0,
+        maxScrollLeft,
+      );
+      const targetTop = clamp(
+        Math.round(restoredViewportState.desktopScroll?.top ?? maxScrollTop / 2),
+        0,
+        maxScrollTop,
+      );
+
+      viewport.scrollLeft = targetLeft;
+      viewport.scrollTop = targetTop;
+      setHasFit(true);
+      onViewportRestoreHandled?.();
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [clampMobilePan, getCenteredMobilePan, isMobileViewport, onViewportRestoreHandled, onZoomChange, restoredViewportState, zoom]);
+
+  useLayoutEffect(() => {
+    if (restoredViewportState || persistedViewportActiveRef.current) {
+      return;
+    }
+
     const raf = requestAnimationFrame(() => {
       fitToScreen();
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [fitToScreen]);
+  }, [fitToScreen, restoredViewportState]);
+
+  useLayoutEffect(() => {
+    if (!hasHandledInitialCanvasSizeRef.current) {
+      hasHandledInitialCanvasSizeRef.current = true;
+      return;
+    }
+
+    if (restoredViewportState || persistedViewportActiveRef.current) {
+      return;
+    }
+
+    hasManualMobileTransformRef.current = false;
+    setHasFit(false);
+
+    const viewport = desktopViewportRef.current;
+    if (viewport && !isMobileViewport) {
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
+    }
+
+    const container = containerRef.current;
+    if (container && container.getBoundingClientRect().width > 0) {
+      fitToScreen({ syncCenter: true });
+      return;
+    }
+
+    const rafId = requestAnimationFrame(() => fitToScreen({ syncCenter: true }));
+    return () => cancelAnimationFrame(rafId);
+  }, [canvasSize.height, canvasSize.width, fitToScreen, isMobileViewport, restoredViewportState]);
 
   useEffect(() => {
+    if (restoredViewportState || persistedViewportActiveRef.current) {
+      return;
+    }
+
     const el = containerRef.current;
     if (!el) return;
 
@@ -2750,7 +3020,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       vv?.removeEventListener("resize", rerun);
       vv?.removeEventListener("scroll", rerun);
     };
-  }, [fitToScreen]);
+  }, [fitToScreen, restoredViewportState]);
 
   /**
    * On every explicit viewport reset (design load / template apply):
@@ -2765,6 +3035,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     hasManualMobileTransformRef.current = false;
     setHasFit(false);
 
+    persistedViewportActiveRef.current = false;
+
     // Immediately reset scroll so the user never sees the canvas at a stale offset.
     const viewport = desktopViewportRef.current;
     if (viewport && !isMobileViewport) {
@@ -2777,9 +3049,9 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     // should never be needed, but it's a safety net.
     const container = containerRef.current;
     if (container && container.getBoundingClientRect().width > 0) {
-      fitToScreen();
+      fitToScreen({ syncCenter: true });
     } else {
-      const rafId = requestAnimationFrame(() => fitToScreen());
+      const rafId = requestAnimationFrame(() => fitToScreen({ syncCenter: true }));
       return () => cancelAnimationFrame(rafId);
     }
   // isMobileViewport and fitToScreen are stable across the design-load render;
@@ -3046,6 +3318,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         aspectRatio: stageAspectRatio,
         boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
         overflow: "hidden",
+        clipPath: "inset(0)",
         background: wrapperBackground,
         touchAction: "none",
         willChange: "transform, width, height",
@@ -3292,6 +3565,9 @@ function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps
     prev.finishDrawingRequest === next.finishDrawingRequest &&
     prev.onDrawingCommitted === next.onDrawingCommitted &&
     prev.onExportCanvasReady === next.onExportCanvasReady &&
+    prev.restoredViewportState === next.restoredViewportState &&
+    prev.onViewportStateChange === next.onViewportStateChange &&
+    prev.onViewportRestoreHandled === next.onViewportRestoreHandled &&
     prev.viewportResetKey === next.viewportResetKey
   );
 }
