@@ -1259,7 +1259,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   );
 
   const commitDrawLayer = useCallback(
-    (src: string) => {
+    (src: string, options?: { selectCommittedLayer?: boolean }) => {
       const nextZIndex = elements.length + 1;
       const newEl = normalizeLayer(
         {
@@ -1280,7 +1280,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
         pushHistory(next);
         return next;
       });
-      setSelectedLayerId(null);
+      setSelectedLayerId(options?.selectCommittedLayer ? newEl.id : null);
     },
     [canvasSize.height, canvasSize.width, elements.length, pushHistory],
   );
@@ -1292,14 +1292,15 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   const handleDrawingCommitted = useCallback(
     (dataUrl: string | null) => {
       if (dataUrl) {
-        commitDrawLayer(dataUrl);
+        commitDrawLayer(dataUrl, { selectCommittedLayer: isMobile });
+      } else {
+        setSelectedLayerId(null);
       }
 
-      setSelectedLayerId(null);
       setActiveTool("select");
       setSidebarExpanded(false);
     },
-    [commitDrawLayer],
+    [commitDrawLayer, isMobile],
   );
 
   const deleteElement = useCallback(
