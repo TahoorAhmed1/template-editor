@@ -3188,18 +3188,12 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!isDrawMode) return;
 
-      const shouldCommit = isMobileViewport && hasDrawingRef.current;
-
       event.preventDefault();
       event.stopPropagation();
       isDrawingRef.current = false;
       lastDrawPointRef.current = null;
-
-      if (shouldCommit) {
-        commitDrawing();
-      }
     },
-    [commitDrawing, isDrawMode, isMobileViewport],
+    [isDrawMode],
   );
 
   const showTransparentPreview = canvasBackground === "transparent";

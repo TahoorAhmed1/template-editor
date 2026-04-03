@@ -55,6 +55,8 @@ type DockTab =
   | "effects"
   | "adjustments"
   | "arrange"
+  | "draw-color"
+  | "draw-brush-size"
   | null;
 
 interface MobileBottomDockProps {
@@ -233,6 +235,31 @@ type ImageAdjustmentKey =
 
 const numberValue = (value: number | undefined, fallback = 0) =>
   Number.isFinite(value) ? Number(value) : fallback;
+
+
+type DrawEntryTool = Exclude<DrawSettings["tool"], "eraser">;
+
+const drawEntryTools: Array<{
+  value: DrawEntryTool;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "pencil",
+    label: "Pencil",
+    description: "Classic freehand line",
+  },
+  {
+    value: "circle",
+    label: "Circle",
+    description: "Dotted ring brush",
+  },
+  {
+    value: "spray",
+    label: "Spray",
+    description: "Soft spray paint texture",
+  },
+];
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -1212,6 +1239,119 @@ function getElementTabs(element: CanvasElement | null) {
   return genericElementTabs;
 }
 
+function getDrawToolLabel(tool: DrawSettings["tool"]) {
+  switch (tool) {
+    case "eraser":
+      return "Eraser";
+    case "circle":
+      return "Circle";
+    case "spray":
+      return "Spray";
+    case "pencil":
+    default:
+      return "Pencil";
+  }
+}
+
+const DrawEntryPanel: React.FC<{
+  selectedTool: DrawEntryTool;
+  onSelectTool: (tool: DrawEntryTool) => void;
+}> = ({ selectedTool, onSelectTool }) => (
+  <div className="space-y-3 pb-2">
+    <SectionTitle>Pen Style</SectionTitle>
+    <div className="space-y-2">
+      {drawEntryTools.map((tool) => {
+        const isActive = selectedTool === tool.value;
+
+        return (
+          <button
+            key={tool.value}
+            type="button"
+            onClick={() => onSelectTool(tool.value)}
+            className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${
+              isActive
+                ? "border-[#7650e3] bg-[#7650e3]/10 text-[#7650e3]"
+                : "border-transparent hover:border-border hover:bg-accent/45"
+            }`}
+          >
+            <div
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                isActive
+                  ? "bg-[#7650e3] text-primary-foreground"
+                  : "bg-[#f3efff] text-[#7650e3]"
+              }`}
+            >
+              <Paintbrush size={18} strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold leading-5 text-foreground">
+                {tool.label}
+              </div>
+              <div className="text-[13px] leading-snug text-muted-foreground">
+                {tool.description}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+const DrawColorPanel: React.FC<{
+  color: string;
+  onChange: (color: string) => void;
+}> = ({ color, onChange }) => (
+  <div className="space-y-4 pb-2">
+    <SectionTitle>Color</SectionTitle>
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-white px-4 py-4">
+      <div>
+        <div className="text-sm font-medium text-foreground">Brush color</div>
+        <div className="text-xs text-muted-foreground">Pick the color for the current drawing session.</div>
+      </div>
+      <input
+        type="color"
+        value={color}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-14 w-20 rounded-2xl border border-[#d7deea] bg-white p-1.5"
+      />
+    </div>
+  </div>
+);
+
+const DrawBrushSizePanel: React.FC<{
+  value: number;
+  onChange: (value: number) => void;
+}> = ({ value, onChange }) => (
+  <div className="space-y-4 pb-2">
+    <SectionTitle>Brush Size</SectionTitle>
+    <div className="space-y-4 rounded-2xl border border-border bg-white px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-foreground">Current size</span>
+        <span className="rounded-full bg-[#7650e3]/10 px-3 py-1 text-sm font-semibold text-[#7650e3]">
+          {value}
+        </span>
+      </div>
+      <input
+        type="range"
+        min="1"
+        max="80"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full cursor-pointer accent-[#7650e3]"
+      />
+      <input
+        type="number"
+        min="1"
+        max="80"
+        value={value}
+        onChange={(event) => onChange(Math.max(1, Number(event.target.value) || 1))}
+        className={`${compactNumberClass} max-w-full`}
+      />
+    </div>
+  </div>
+);
+
 function getHeaderTitle(
   openTab: DockTab,
   addToolView: "list" | "tool",
@@ -1237,6 +1377,8 @@ function getHeaderTitle(
   if (openTab === "effects") return "Effects";
   if (openTab === "adjustments") return "Adjustments";
   if (openTab === "arrange") return "Arrange";
+  if (openTab === "draw-color") return "Color";
+  if (openTab === "draw-brush-size") return "Brush Size";
   return "";
 }
 
@@ -1285,6 +1427,7 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
   );
   const primaryTab = tabs[0];
   const scrollableTabs = tabs.slice(1);
+  const isDrawSession = activeTool === "draw";
   const isOpen = openTab !== null;
 
   React.useEffect(() => {
@@ -1318,6 +1461,15 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
 
   React.useEffect(() => {
     if (
+      !isDrawSession &&
+      (openTab === "draw-color" || openTab === "draw-brush-size")
+    ) {
+      setOpenTab(null);
+    }
+  }, [isDrawSession, openTab]);
+
+  React.useEffect(() => {
+    if (
       activeTool === "select" &&
       openTab === "add" &&
       addToolView === "tool"
@@ -1341,6 +1493,42 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
     onToolClick(tool);
     setAddToolView("tool");
     setOpenTab("add");
+  };
+
+  const handleSelectInitialDrawTool = (tool: DrawEntryTool) => {
+    onUpdateDrawSettings({ tool });
+    setOpenTab(null);
+    setAddToolView("list");
+  };
+
+  const renderDrawSessionPanel = () => {
+    switch (openTab) {
+      case "add":
+        return (
+          <DrawEntryPanel
+            selectedTool={
+              drawSettings.tool === "eraser" ? "pencil" : drawSettings.tool
+            }
+            onSelectTool={handleSelectInitialDrawTool}
+          />
+        );
+      case "draw-color":
+        return (
+          <DrawColorPanel
+            color={drawSettings.color}
+            onChange={(color) => onUpdateDrawSettings({ color })}
+          />
+        );
+      case "draw-brush-size":
+        return (
+          <DrawBrushSizePanel
+            value={drawSettings.brushSize}
+            onChange={(brushSize) => onUpdateDrawSettings({ brushSize })}
+          />
+        );
+      default:
+        return null;
+    }
   };
 
   const renderDesignTabPanel = () => {
@@ -1670,41 +1858,54 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
               addToolView === "tool" &&
               activeTool !== "select" && (
                 <div className="px-0.5 pb-4">
-                  <ToolbarSidePanel
-                    activeTool={activeTool}
-                    onAddElement={(el) => {
-                      onAddElement(el);
-                      setOpenTab(null);
-                      setAddToolView("list");
-                    }}
-                    onApplyTemplate={(template) => {
-                      onApplyTemplate(template);
-                      setOpenTab(null);
-                      setAddToolView("list");
-                    }}
-                    onBackgroundChange={onBackgroundChange}
-                    canvasBackground={canvasBackground}
-                    canvasSize={canvasSize}
-                    mode={mode}
-                    onCanvasSizeChange={onCanvasSizeChange}
-                    drawSettings={drawSettings}
-                    onUpdateDrawSettings={onUpdateDrawSettings}
-                    onFinishDrawing={() => {
-                      onFinishDrawing();
-                      setOpenTab(null);
-                      setAddToolView("list");
-                    }}
-                  />
+                  {isDrawSession ? (
+                    renderDrawSessionPanel()
+                  ) : (
+                    <ToolbarSidePanel
+                      activeTool={activeTool}
+                      onAddElement={(el) => {
+                        onAddElement(el);
+                        setOpenTab(null);
+                        setAddToolView("list");
+                      }}
+                      onApplyTemplate={(template) => {
+                        onApplyTemplate(template);
+                        setOpenTab(null);
+                        setAddToolView("list");
+                      }}
+                      onBackgroundChange={onBackgroundChange}
+                      canvasBackground={canvasBackground}
+                      canvasSize={canvasSize}
+                      mode={mode}
+                      onCanvasSizeChange={onCanvasSizeChange}
+                      drawSettings={drawSettings}
+                      onUpdateDrawSettings={onUpdateDrawSettings}
+                      onFinishDrawing={() => {
+                        onFinishDrawing();
+                        setOpenTab(null);
+                        setAddToolView("list");
+                      }}
+                    />
+                  )}
                 </div>
               )}
 
-            {!selectedElement && openTab && openTab !== "add" && (
+            {isDrawSession &&
+              openTab &&
+              openTab !== "add" &&
+              (openTab === "draw-color" || openTab === "draw-brush-size") && (
+                <div className="space-y-4 px-0.5 pb-4">
+                  {renderDrawSessionPanel()}
+                </div>
+              )}
+
+            {!isDrawSession && !selectedElement && openTab && openTab !== "add" && (
               <div className="space-y-4 px-0.5 pb-4">
                 {renderDesignTabPanel()}
               </div>
             )}
 
-            {selectedElement && openTab && openTab !== "add" && (
+            {!isDrawSession && selectedElement && openTab && openTab !== "add" && (
               <div className="space-y-4 px-0.5 pb-4">
                 {renderElementTabPanel()}
               </div>
@@ -1719,54 +1920,162 @@ export const MobileBottomDock: React.FC<MobileBottomDockProps> = ({
           paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)",
         }}
       >
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleDockTabClick(primaryTab.id)}
-            className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
-              openTab === primaryTab.id
-                ? "bg-[#7650e3]/10 text-[#7650e3]"
-                : "text-foreground"
-            }`}
-          >
-            <div className="mb-1 flex h-20 w-7 items-center justify-center rounded-full bg-[#7650e3] text-primary-foreground shadow-sm">
-              <primaryTab.icon size={18} strokeWidth={1.8} />
-            </div>
-            <span className="whitespace-nowrap text-[11px] font-medium">
-              {primaryTab.label}
-            </span>
-          </button>
-
+        {isDrawSession ? (
           <div
-            className="min-w-0 flex-1 overflow-x-auto"
+            className="overflow-x-auto"
             data-allow-touch-scroll="x"
           >
-            <div className="flex items-center gap-2 pr-1">
-              {scrollableTabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = openTab === tab.id;
 
+
+
+
+
+
+            <div className="flex items-center gap-2 pr-1">
+              {([
+                { key: "pencil", label: "Pencil" },
+                { key: "circle", label: "Circle" },
+                { key: "spray", label: "Spray" },
+                { key: "eraser", label: "Eraser" },
+              ] as const).map((tool) => {
+                const isActive = drawSettings.tool === tool.key;
+
+
+
+                
                 return (
+
+                  
                   <button
-                    key={tab.id}
-                    onClick={() => handleDockTabClick(tab.id)}
-                    className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+                    key={tool.key}
+                    type="button"
+                    onClick={() => {
+                      onUpdateDrawSettings({ tool: tool.key });
+                      setOpenTab(null);
+                    }}
+                    className={`flex h-[64px] min-w-[72px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
                       isActive
                         ? "bg-[#7650e3]/10 text-[#7650e3]"
                         : "text-muted-foreground"
                     }`}
                   >
                     <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full">
-                      <Icon size={18} strokeWidth={1.8} />
+                      <Paintbrush size={18} strokeWidth={1.8} />
                     </div>
                     <span className="whitespace-nowrap text-[11px] font-medium">
-                      {tab.label}
+                      {tool.label}
                     </span>
                   </button>
+
+
+
                 );
               })}
+
+              <button
+                type="button"
+                onClick={() => handleDockTabClick("draw-brush-size")}
+                className={`flex h-[64px] min-w-[72px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+                  openTab === "draw-brush-size"
+                    ? "bg-[#7650e3]/10 text-[#7650e3]"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full">
+                  <SlidersHorizontal size={18} strokeWidth={1.8} />
+                </div>
+                <span className="whitespace-nowrap text-[11px] font-medium">
+                  Brush {drawSettings.brushSize}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDockTabClick("draw-color")}
+                className={`flex h-[64px] min-w-[72px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+                  openTab === "draw-color"
+                    ? "bg-[#7650e3]/10 text-[#7650e3]"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full">
+                  <Palette size={18} strokeWidth={1.8} />
+                </div>
+                <span className="whitespace-nowrap text-[11px] font-medium">
+                  Color
+                </span>
+              </button>
+
+              
+
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenTab(null);
+                  setAddToolView("list");
+                  onFinishDrawing();
+                }}
+                className="flex h-[64px] min-w-[72px] shrink-0 flex-col items-center justify-center rounded-2xl bg-[#7650e3] px-4 py-2 text-primary-foreground shadow-sm transition hover:bg-[#6947ca]"
+              >
+                <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full">
+                  <Check size={18} strokeWidth={2} />
+                </div>
+                <span className="whitespace-nowrap text-[11px] font-semibold">
+                  Finish 
+                </span>
+              </button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleDockTabClick(primaryTab.id)}
+              className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+                openTab === primaryTab.id
+                  ? "bg-[#7650e3]/10 text-[#7650e3]"
+                  : "text-foreground"
+              }`}
+            >
+              <div className="mb-1 flex h-20 w-7 items-center justify-center rounded-full bg-[#7650e3] text-primary-foreground shadow-sm">
+                <primaryTab.icon size={18} strokeWidth={1.8} />
+              </div>
+              <span className="whitespace-nowrap text-[11px] font-medium">
+                {primaryTab.label}
+              </span>
+            </button>
+
+            <div
+              className="min-w-0 flex-1 overflow-x-auto"
+              data-allow-touch-scroll="x"
+            >
+              <div className="flex items-center gap-2 pr-1">
+                {scrollableTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = openTab === tab.id;
+
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleDockTabClick(tab.id)}
+                      className={`flex h-[64px] min-w-[78px] shrink-0 flex-col items-center justify-center rounded-2xl px-3 py-2 transition-colors ${
+                        isActive
+                          ? "bg-[#7650e3]/10 text-[#7650e3]"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <div className="mb-1 flex h-9 w-9 items-center justify-center rounded-full">
+                        <Icon size={18} strokeWidth={1.8} />
+                      </div>
+                      <span className="whitespace-nowrap text-[11px] font-medium">
+                        {tab.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
