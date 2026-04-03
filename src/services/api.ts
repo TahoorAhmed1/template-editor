@@ -1,7 +1,6 @@
 import axios from "axios";
 
-const BASE_URL: string =
-  import.meta.env.VITE_API_URL || `http://localhost:3000/api`;
+const BASE_URL: string = `https://omnishare.ai/server/api`;
 
 export const API: any = axios.create({
   baseURL: BASE_URL,
