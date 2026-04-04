@@ -83,7 +83,14 @@ import {
   List,
   type LucideIcon,
 } from "lucide-react";
-import type { ToolType, CanvasElement, EditorMode, CanvasSizePreset, DrawSettings } from "./EditorShell";
+import type {
+  ToolType,
+  CanvasBackgroundValue,
+  CanvasElement,
+  EditorMode,
+  CanvasSizePreset,
+  DrawSettings,
+} from "./EditorShell";
 import { API } from "@/services/api";
 import {
   BackgroundFlyout,
@@ -98,8 +105,8 @@ interface ToolbarSidePanelProps {
   activeTool: ToolType;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
   onApplyTemplate: (template: TemplateApplyPayload) => void;
-  onBackgroundChange: (bg: string) => void;
-  canvasBackground: string;
+  onBackgroundChange: (bg: CanvasBackgroundValue) => void;
+canvasBackground: CanvasBackgroundValue;
   canvasSize: CanvasSizePreset;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
@@ -131,7 +138,7 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
     case "uploads":
       return <UploadsPanel onAddElement={onAddElement} mode={mode} />;
     case "background":
-      return <BackgroundFlyout onBackgroundChange={onBackgroundChange} onAddElement={onAddElement} />;
+      return <BackgroundFlyout onBackgroundChange={onBackgroundChange} onAddElement={onAddElement} canvasBackground={canvasBackground} />;
     case "ai":
       return <AIPanel onAddElement={onAddElement} />;
     case "draw":

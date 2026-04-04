@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type {
   ActiveTool,
   ToolType,
+  CanvasBackgroundValue,
   CanvasElement,
   EditorMode,
   CanvasSizePreset,
@@ -53,8 +54,8 @@ interface ToolbarProps {
   isMobile?: boolean;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
   onApplyTemplate: (template: TemplateApplyPayload) => void;
-  onBackgroundChange: (bg: string) => void;
-  canvasBackground: string;
+  onBackgroundChange: (bg: CanvasBackgroundValue) => void;
+canvasBackground: CanvasBackgroundValue;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
   canvasSize: CanvasSizePreset;

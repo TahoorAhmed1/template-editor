@@ -7,7 +7,12 @@ import React, {
 } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import Konva from "konva";
-import type { ActiveTool, CanvasElement, DrawSettings } from "./EditorShell";
+import type {
+  ActiveTool,
+  CanvasBackgroundValue,
+  CanvasElement,
+  DrawSettings,
+} from "./EditorShell";
 import { getLinearGradientPoints as getSharedLinearGradientPoints, getRadialGradientGeometry, parseLinearGradient as parseSharedLinearGradient, parseRadialGradient } from "./backgroundUtils";
 import type { TemplateViewportState } from "./templateTypes";
 import { LayerEffectOverlay } from "./LayerEffectOverlay";
@@ -33,7 +38,7 @@ interface CanvasStageProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   canvasSize: { width: number; height: number; label: string };
-  canvasBackground: string;
+  canvasBackground: CanvasBackgroundValue;
   gridEnabled?: boolean;
   alignmentGuides?: boolean;
   bleedEnabled?: boolean;
@@ -83,6 +88,8 @@ type TransformSession = {
   startPointer: ViewportPoint | null;
   aspectRatio: number;
 };
+
+
 
 type ViewportPoint = {
   x: number;
@@ -2613,7 +2620,8 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
 
   useEffect(() => {
     const gridLayer = gridLayerRef.current;
-    if (!gridLayer) return;
+    const stage = stageRef.current;
+    if (!gridLayer || !stage) return;
 
     gridLayer.destroyChildren();
 
@@ -2632,11 +2640,14 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     }
 
     gridLayer.draw();
+    stage.batchDraw();
   }, [
     canvasBackground,
     canvasSize.width,
     canvasSize.height,
     gridEnabled,
+    isMobileViewport,
+    scale,
   ]);
 
   useEffect(() => {
@@ -3196,9 +3207,12 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     [isDrawMode],
   );
 
-  const showTransparentPreview = canvasBackground === "transparent";
+  const isStringCanvasBackground = typeof canvasBackground === "string";
+  const showTransparentPreview = isStringCanvasBackground && canvasBackground === "transparent";
   const wrapperBackground =
-    !showTransparentPreview && canvasBackground ? canvasBackground : "#ffffff";
+    isStringCanvasBackground && !showTransparentPreview && canvasBackground
+      ? canvasBackground
+      : "#ffffff";
   const stageAspectRatio =
     canvasSize.label === "Instagram Story"
       ? "9 / 16"
@@ -3833,18 +3847,189 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
   }
 }
 
-function createCanvasBackgroundNode(
-  canvasBackground: string,
+const createCanvasBackgroundNode = (
+  canvasBackground: CanvasBackgroundValue,
   width: number,
   height: number,
-): Konva.Rect | null {
-  if (!canvasBackground || canvasBackground === "transparent") {
-    return null;
+): Konva.Rect | Konva.Image | null => {
+  if (typeof canvasBackground === "string") {
+    if (!canvasBackground || canvasBackground === "transparent") {
+      return null;
+    }
+
+    const linearGradient = parseSharedLinearGradient(canvasBackground);
+    if (linearGradient) {
+      const { start, end } = getSharedLinearGradientPoints(
+        linearGradient.angleDeg,
+        width,
+        height,
+      );
+
+      return new Konva.Rect({
+        x: 0,
+        y: 0,
+        width,
+        height,
+        listening: false,
+        draggable: false,
+        fillPriority: "linear-gradient",
+        fillLinearGradientStartPoint: start,
+        fillLinearGradientEndPoint: end,
+        fillLinearGradientColorStops: linearGradient.colorStops.flatMap((stop) => [
+          stop.offset,
+          stop.color,
+        ]),
+        name: "canvas-background",
+      });
+    }
+
+    const radialGradient = parseRadialGradient(canvasBackground);
+    if (radialGradient) {
+      const geometry = getRadialGradientGeometry(radialGradient, width, height);
+
+      return new Konva.Rect({
+        x: 0,
+        y: 0,
+        width,
+        height,
+        listening: false,
+        draggable: false,
+        fillPriority: "radial-gradient",
+        fillRadialGradientStartPoint: geometry.startPoint,
+        fillRadialGradientStartRadius: geometry.startRadius,
+        fillRadialGradientEndPoint: geometry.endPoint,
+        fillRadialGradientEndRadius: geometry.endRadius,
+        fillRadialGradientColorStops: radialGradient.colorStops.flatMap((stop) => [
+          stop.offset,
+          stop.color,
+        ]),
+        name: "canvas-background",
+      });
+    }
+
+    return new Konva.Rect({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      fill: canvasBackground,
+      listening: false,
+      draggable: false,
+      name: "canvas-background",
+    });
   }
 
-  const linearGradient = parseSharedLinearGradient(canvasBackground);
-  if (linearGradient) {
-    const { start, end } = getSharedLinearGradientPoints(linearGradient.angleDeg, width, height);
+  const backgroundRecord = canvasBackground as Record<string, unknown>;
+  const backgroundType = typeof backgroundRecord.type === "string" ? backgroundRecord.type : "";
+
+  if (backgroundType === "image") {
+    const src = typeof backgroundRecord.src === "string" ? backgroundRecord.src : "";
+    if (!src) {
+      return null;
+    }
+
+    const fit =
+      backgroundRecord.fit === "contain" ||
+      backgroundRecord.fit === "stretch" ||
+      backgroundRecord.fit === "cover"
+        ? backgroundRecord.fit
+        : "cover";
+    const opacity =
+      typeof backgroundRecord.opacity === "number" ? backgroundRecord.opacity : 1;
+
+    const image = getImageAsset(src);
+    const node = new Konva.Image({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      image,
+      opacity,
+      listening: false,
+      draggable: false,
+      name: "canvas-background",
+    });
+
+    const clearCrop = () => {
+      node.crop({ x: 0, y: 0, width: 0, height: 0 });
+    };
+
+    const applyLayout = () => {
+      if (fit === "cover") {
+        const crop = getCoverCrop(image, width, height);
+        if (crop) {
+          node.crop(crop);
+        } else {
+          clearCrop();
+        }
+        node.x(0);
+        node.y(0);
+        node.width(width);
+        node.height(height);
+      } else if (fit === "stretch") {
+        clearCrop();
+        node.x(0);
+        node.y(0);
+        node.width(width);
+        node.height(height);
+      } else {
+        const sourceWidth = image.naturalWidth || image.width || width;
+        const sourceHeight = image.naturalHeight || image.height || height;
+        const imageRatio = sourceWidth / Math.max(1, sourceHeight);
+        const canvasRatio = width / Math.max(1, height);
+
+        let drawWidth = width;
+        let drawHeight = height;
+
+        if (imageRatio > canvasRatio) {
+          drawWidth = width;
+          drawHeight = width / imageRatio;
+        } else {
+          drawHeight = height;
+          drawWidth = height * imageRatio;
+        }
+
+        clearCrop();
+        node.width(drawWidth);
+        node.height(drawHeight);
+        node.x((width - drawWidth) / 2);
+        node.y((height - drawHeight) / 2);
+      }
+
+      node.getLayer()?.batchDraw();
+      node.getStage()?.batchDraw();
+    };
+
+    if (image.complete && image.naturalWidth > 0) {
+      applyLayout();
+    } else {
+      image.addEventListener("load", applyLayout, { once: true });
+    }
+
+    return node;
+  }
+
+  if (backgroundType === "solid") {
+    const color = typeof backgroundRecord.color === "string" ? backgroundRecord.color : "#FFFFFF";
+    return new Konva.Rect({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      fill: color,
+      listening: false,
+      draggable: false,
+      name: "canvas-background",
+    });
+  }
+
+  if (backgroundType === "linear") {
+    const colors = Array.isArray(backgroundRecord.colors) ? backgroundRecord.colors : [];
+    const angleDeg = typeof backgroundRecord.angleDeg === "number" ? backgroundRecord.angleDeg : 180;
+    const startColor = typeof colors[0] === "string" ? colors[0] : "#FFFFFF";
+    const endColor = typeof colors[1] === "string" ? colors[1] : "#FFFFFF";
+    const { start, end } = getSharedLinearGradientPoints(angleDeg, width, height);
+
     return new Konva.Rect({
       x: 0,
       y: 0,
@@ -3855,16 +4040,23 @@ function createCanvasBackgroundNode(
       fillPriority: "linear-gradient",
       fillLinearGradientStartPoint: start,
       fillLinearGradientEndPoint: end,
-      fillLinearGradientColorStops: linearGradient.colorStops.flatMap((stop) => [
-        stop.offset,
-        stop.color,
-      ]),
+      fillLinearGradientColorStops: [0, startColor, 1, endColor],
       name: "canvas-background",
     });
   }
 
-  const radialGradient = parseRadialGradient(canvasBackground);
-  if (radialGradient) {
+  if (backgroundType === "radial") {
+    const colors = Array.isArray(backgroundRecord.colors) ? backgroundRecord.colors : [];
+    const startColor = typeof colors[0] === "string" ? colors[0] : "#FFFFFF";
+    const endColor = typeof colors[1] === "string" ? colors[1] : "#FFFFFF";
+    const radialGradient = parseRadialGradient(
+      `radial-gradient(circle, ${startColor} 0%, ${endColor} 100%)`,
+    );
+
+    if (!radialGradient) {
+      return null;
+    }
+
     const geometry = getRadialGradientGeometry(radialGradient, width, height);
 
     return new Konva.Rect({
@@ -3887,17 +4079,8 @@ function createCanvasBackgroundNode(
     });
   }
 
-  return new Konva.Rect({
-    x: 0,
-    y: 0,
-    width,
-    height,
-    fill: canvasBackground,
-    listening: false,
-    draggable: false,
-    name: "canvas-background",
-  });
-}
+  return null;
+};
 
 function drawGrid(
   layer: Konva.Layer,
