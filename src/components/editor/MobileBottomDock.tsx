@@ -583,10 +583,10 @@ const TextContentPanel: React.FC<{
         />
       </FieldRow>
     ) : null}
-    <LinkField
+    {/* <LinkField
       value={layer.linkUrl || ""}
       onChange={(value) => onUpdate({ linkUrl: value })}
-    />
+    /> */}
   </div>
 );
 
@@ -714,12 +714,12 @@ const ImageActionsPanel: React.FC<{
       onDelete={onDelete}
       onMoveLayer={onMoveLayer}
     />
-    <div className="space-y-2">
+    {/* <div className="space-y-2">
       <SectionTitle>Source</SectionTitle>
       <div className="rounded-xl border border-border bg-white px-3 py-3 text-xs leading-5 text-muted-foreground break-all">
         {layer.src || "No source"}
       </div>
-    </div>
+    </div> */}
   </div>
 );
 
@@ -1224,11 +1224,11 @@ const ArrangePanel: React.FC<{
       onChange={(value) => onUpdate({ linkUrl: value })}
     />
 
-    <LayerActions
+    {/* <LayerActions
       onDuplicate={onDuplicate}
       onDelete={onDelete}
       onMoveLayer={onMoveLayer}
-    />
+    /> */}
   </div>
 );
 
