@@ -381,7 +381,7 @@ const TemplatesPanel: React.FC<{
       setError(null);
 
       try {
-        const response = await API.listGlobalTemplates(dimension);
+        const response = await API.listGlobalTemplates("");
         const payload = response?.data;
         const nextTemplates = (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [])
           .filter(isTemplateRecord);

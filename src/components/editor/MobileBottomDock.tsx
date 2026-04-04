@@ -111,13 +111,13 @@ const tools: ToolItem[] = [
     description: "Add from My Uploads, Google Drive, and more",
     modes: ["image", "video"],
   },
-  // {
-  //   id: "templates",
-  //   label: "Templates",
-  //   icon: LayoutGrid,
-  //   description: "Explore templates for your design",
-  //   modes: ["image", "video"],
-  // },
+  {
+    id: "templates",
+    label: "Templates",
+    icon: LayoutGrid,
+    description: "Explore templates for your design",
+    modes: ["image", "video"],
+  },
   {
     id: "media",
     label: "Media",

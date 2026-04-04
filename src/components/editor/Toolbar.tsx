@@ -32,7 +32,7 @@ interface ToolItem {
 
 const tools: ToolItem[] = [
   { id: "uploads", label: "My Uploads", icon: Upload, modes: ["image", "video"] },
-  // { id: "templates", label: "Templates", icon: LayoutGrid, modes: ["image", "video"] },
+  { id: "templates", label: "Templates", icon: LayoutGrid, modes: ["image", "video"] },
   { id: "media", label: "Media", icon: Images, modes: ["image", "video"] },
   { id: "text", label: "Text", icon: Type, modes: ["image", "video"] },
   { id: "ai", label: "AI", icon: Sparkles, modes: ["image", "video"] },
