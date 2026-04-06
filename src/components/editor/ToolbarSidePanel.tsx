@@ -106,7 +106,7 @@ interface ToolbarSidePanelProps {
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
   onApplyTemplate: (template: TemplateApplyPayload) => void;
   onBackgroundChange: (bg: CanvasBackgroundValue) => void;
-canvasBackground: CanvasBackgroundValue;
+  canvasBackground: CanvasBackgroundValue;
   canvasSize: CanvasSizePreset;
   mode: EditorMode;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
@@ -130,7 +130,12 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
 }) => {
   switch (activeTool) {
     case "templates":
-      return <TemplatesPanel canvasSize={canvasSize} onApplyTemplate={onApplyTemplate} />;
+      return (
+        <TemplatesPanel
+          canvasSize={canvasSize}
+          onApplyTemplate={onApplyTemplate}
+        />
+      );
     case "text":
       return <TextPanel onAddElement={onAddElement} />;
     case "media":
@@ -138,7 +143,13 @@ export const ToolbarSidePanel: React.FC<ToolbarSidePanelProps> = ({
     case "uploads":
       return <UploadsPanel onAddElement={onAddElement} mode={mode} />;
     case "background":
-      return <BackgroundFlyout onBackgroundChange={onBackgroundChange} onAddElement={onAddElement} canvasBackground={canvasBackground} />;
+      return (
+        <BackgroundFlyout
+          onBackgroundChange={onBackgroundChange}
+          onAddElement={onAddElement}
+          canvasBackground={canvasBackground}
+        />
+      );
     case "ai":
       return <AIPanel onAddElement={onAddElement} />;
     case "draw":
@@ -225,11 +236,7 @@ const SegmentedTabs: React.FC<{
 const PanelCard: React.FC<React.PropsWithChildren<{ className?: string }>> = ({
   children,
   className = "",
-}) => (
-  <div >
-    {children}
-  </div>
-);
+}) => <div>{children}</div>;
 
 const ToolListItem: React.FC<{
   icon: React.ReactNode;
@@ -254,7 +261,9 @@ const ToolListItem: React.FC<{
   </button>
 );
 
-const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const SectionTitle: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => (
   <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[#8b84b3]">
     {children}
   </p>
@@ -343,7 +352,7 @@ const createShapeAssetDataUrl = (icon: LucideIcon, color: string) => {
         color,
         strokeWidth: 1.8,
       })}
-    </svg>,
+    </svg>
   );
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -360,7 +369,10 @@ const isTemplateRecord = (value: unknown): value is TemplateRecord => {
   return typeof candidate.id === "string" && typeof candidate.name === "string";
 };
 
-const getTemplateCategoryMatch = (template: TemplateRecord, category: string) => {
+const getTemplateCategoryMatch = (
+  template: TemplateRecord,
+  category: string
+) => {
   if (category === "all") {
     return true;
   }
@@ -390,8 +402,13 @@ const TemplatesPanel: React.FC<{
       try {
         const response = await API.listGlobalTemplates("");
         const payload = response?.data;
-        const nextTemplates = (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [])
-          .filter(isTemplateRecord);
+        const nextTemplates = (
+          Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : []
+        ).filter(isTemplateRecord);
 
         if (isMounted) {
           setTemplates(nextTemplates);
@@ -429,7 +446,11 @@ const TemplatesPanel: React.FC<{
 
   return (
     <div>
-      <SearchBar placeholder="Search templates" value={search} onChange={setSearch} />
+      <SearchBar
+        placeholder="Search templates"
+        value={search}
+        onChange={setSearch}
+      />
 
       <div className="mb-4 flex flex-wrap gap-2">
         {categories.map((cat) => {
@@ -496,8 +517,12 @@ const TemplatesPanel: React.FC<{
                   )}
                 </div>
                 <div className="border-t border-[#edf1f5] px-3 py-2.5">
-                  <div className="truncate text-[12px] font-semibold text-[#243b63]">{template.name}</div>
-                  <div className="mt-0.5 text-[11px] text-[#7b8798]">{template.dimension || dimension}</div>
+                  <div className="truncate text-[12px] font-semibold text-[#243b63]">
+                    {template.name}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-[#7b8798]">
+                    {template.dimension || dimension}
+                  </div>
                 </div>
               </div>
             </button>
@@ -516,10 +541,12 @@ const TemplatesPanel: React.FC<{
 
 /* ---------- text ---------- */
 
-const TextPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void }> = ({
-  onAddElement,
-}) => {
-  const addText = (preset: "plain" | "fancy" | "subtitle" | "slideshow" | "menu") => {
+const TextPanel: React.FC<{
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onAddElement }) => {
+  const addText = (
+    preset: "plain" | "fancy" | "subtitle" | "slideshow" | "menu"
+  ) => {
     const map = {
       plain: {
         content: "Plain Text",
@@ -639,17 +666,23 @@ const MediaPanel: React.FC<{
     "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=400&h=300&fit=crop",
   ];
   const normalizedSearch = search.trim().toLowerCase();
-  const filteredImages = stockImages.filter((src) =>
-    normalizedSearch.length === 0 || src.toLowerCase().includes(normalizedSearch),
+  const filteredImages = stockImages.filter(
+    (src) =>
+      normalizedSearch.length === 0 ||
+      src.toLowerCase().includes(normalizedSearch)
   );
-  const filteredShapes = SHAPE_ASSETS.filter((shape) =>
-    normalizedSearch.length === 0 || shape.label.toLowerCase().includes(normalizedSearch),
+  const filteredShapes = SHAPE_ASSETS.filter(
+    (shape) =>
+      normalizedSearch.length === 0 ||
+      shape.label.toLowerCase().includes(normalizedSearch)
   );
 
   return (
     <div>
       <SearchBar
-        placeholder={mode === "video" ? "Search photos & videos" : "Search photos & shapes"}
+        placeholder={
+          mode === "video" ? "Search photos & videos" : "Search photos & shapes"
+        }
         value={search}
         onChange={setSearch}
       />
@@ -678,7 +711,12 @@ const MediaPanel: React.FC<{
                   })
                 }
               >
-                <img src={src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img
+                  src={src}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
               </button>
             ))}
           </div>
@@ -703,7 +741,9 @@ const MediaPanel: React.FC<{
                 <div className="flex h-full w-full items-center justify-center rounded-xl bg-[#f8fafc]">
                   <shape.icon size={52} strokeWidth={1.8} color={shape.color} />
                 </div>
-                <span className="text-[12px] font-medium text-[#51627c]">{shape.label}</span>
+                <span className="text-[12px] font-medium text-[#51627c]">
+                  {shape.label}
+                </span>
               </button>
             ))}
           </div>
@@ -720,7 +760,9 @@ const UploadsPanel: React.FC<{
   mode: EditorMode;
 }> = ({ onAddElement, mode }) => {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploads, setUploads] = useState<Array<{ src: string; kind: "image" | "video" }>>([]);
+  const [uploads, setUploads] = useState<
+    Array<{ src: string; kind: "image" | "video" }>
+  >([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -738,12 +780,22 @@ const UploadsPanel: React.FC<{
           "loadedmetadata",
           () => {
             const maxW = 500;
-            const ratio = (probeVideo.videoWidth || 16) / Math.max(1, probeVideo.videoHeight || 9);
+            const ratio =
+              (probeVideo.videoWidth || 16) /
+              Math.max(1, probeVideo.videoHeight || 9);
             const w = Math.min(probeVideo.videoWidth || maxW, maxW);
             const h = w / ratio;
-            onAddElement({ type: "video", x: 100, y: 100, width: w, height: h, src: objectUrl, duration: Math.round(probeVideo.duration || 0) });
+            onAddElement({
+              type: "video",
+              x: 100,
+              y: 100,
+              width: w,
+              height: h,
+              src: objectUrl,
+              duration: Math.round(probeVideo.duration || 0),
+            });
           },
-          { once: true },
+          { once: true }
         );
         return;
       }
@@ -759,7 +811,14 @@ const UploadsPanel: React.FC<{
           const ratio = img.width / img.height;
           const w = Math.min(img.width, maxW);
           const h = w / ratio;
-          onAddElement({ type: "image", x: 100, y: 100, width: w, height: h, src: dataUrl });
+          onAddElement({
+            type: "image",
+            x: 100,
+            y: 100,
+            width: w,
+            height: h,
+            src: dataUrl,
+          });
         };
         img.src = dataUrl;
       };
@@ -783,7 +842,9 @@ const UploadsPanel: React.FC<{
         className="flex h-[132px] w-full flex-col items-center justify-center rounded-2xl border border-dashed border-[#cfd8e3] bg-[#f8fbfd] text-[#607086] transition hover:border-[#9cc7df] hover:bg-white"
       >
         <UploadCloud size={30} strokeWidth={1.6} />
-        <div className="mt-2 text-[14px] font-semibold text-[#243b63]">Upload files</div>
+        <div className="mt-2 text-[14px] font-semibold text-[#243b63]">
+          Upload files
+        </div>
         <div className="text-[12px] text-[#7b8798]">or drag and drop</div>
       </button>
 
@@ -804,12 +865,22 @@ const UploadsPanel: React.FC<{
                       "loadedmetadata",
                       () => {
                         const maxW = 500;
-                        const ratio = (probeVideo.videoWidth || 16) / Math.max(1, probeVideo.videoHeight || 9);
+                        const ratio =
+                          (probeVideo.videoWidth || 16) /
+                          Math.max(1, probeVideo.videoHeight || 9);
                         const w = Math.min(probeVideo.videoWidth || maxW, maxW);
                         const h = w / ratio;
-                        onAddElement({ type: "video", x: 100, y: 100, width: w, height: h, src: upload.src, duration: Math.round(probeVideo.duration || 0) });
+                        onAddElement({
+                          type: "video",
+                          x: 100,
+                          y: 100,
+                          width: w,
+                          height: h,
+                          src: upload.src,
+                          duration: Math.round(probeVideo.duration || 0),
+                        });
                       },
-                      { once: true },
+                      { once: true }
                     );
                     return;
                   }
@@ -820,15 +891,31 @@ const UploadsPanel: React.FC<{
                     const ratio = img.width / img.height;
                     const w = Math.min(img.width, maxW);
                     const h = w / ratio;
-                    onAddElement({ type: "image", x: 100, y: 100, width: w, height: h, src: upload.src });
+                    onAddElement({
+                      type: "image",
+                      x: 100,
+                      y: 100,
+                      width: w,
+                      height: h,
+                      src: upload.src,
+                    });
                   };
                   img.src = upload.src;
                 }}
               >
                 {upload.kind === "video" ? (
-                  <video src={upload.src} className="h-full w-full object-cover" muted playsInline />
+                  <video
+                    src={upload.src}
+                    className="h-full w-full object-cover"
+                    muted
+                    playsInline
+                  />
                 ) : (
-                  <img src={upload.src} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={upload.src}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
                 )}
               </button>
             ))}
@@ -851,9 +938,24 @@ const BackgroundPanel: React.FC<{
   const [tab, setTab] = useState("colors");
 
   const colors = [
-    "#FFFFFF", "#F8F8F8", "#EDEDED", "#D9D9D9", "#BDBDBD", "#8D99AE",
-    "#4F5D75", "#2D3142", "#000000", "#F94144", "#F3722C", "#F9C74F",
-    "#90BE6D", "#43AA8B", "#4D96FF", "#577590", "#9B5DE5", "#F15BB5",
+    "#FFFFFF",
+    "#F8F8F8",
+    "#EDEDED",
+    "#D9D9D9",
+    "#BDBDBD",
+    "#8D99AE",
+    "#4F5D75",
+    "#2D3142",
+    "#000000",
+    "#F94144",
+    "#F3722C",
+    "#F9C74F",
+    "#90BE6D",
+    "#43AA8B",
+    "#4D96FF",
+    "#577590",
+    "#9B5DE5",
+    "#F15BB5",
   ];
 
   const gradients = [
@@ -867,7 +969,11 @@ const BackgroundPanel: React.FC<{
 
   return (
     <div>
-      <SegmentedTabs tabs={["colors", "gradients", "patterns"]} active={tab} onChange={setTab} />
+      <SegmentedTabs
+        tabs={["colors", "gradients", "patterns"]}
+        active={tab}
+        onChange={setTab}
+      />
 
       {tab === "colors" && (
         <div className="space-y-4">
@@ -890,7 +996,9 @@ const BackgroundPanel: React.FC<{
           </div>
 
           <div className="rounded-2xl border border-[#e4e7ec] bg-white p-3">
-            <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">Custom color</label>
+            <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">
+              Custom color
+            </label>
             <div className="flex items-center gap-3">
               <input
                 type="color"
@@ -906,7 +1014,8 @@ const BackgroundPanel: React.FC<{
                 value={customColor}
                 onChange={(e) => {
                   setCustomColor(e.target.value);
-                  if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) onBackgroundChange(e.target.value);
+                  if (/^#[0-9a-fA-F]{6}$/.test(e.target.value))
+                    onBackgroundChange(e.target.value);
                 }}
                 className="h-10 flex-1 rounded-xl border border-[#dfe3ea] bg-[#f8fafc] px-3 text-[13px] text-[#243b63] outline-none"
               />
@@ -934,7 +1043,9 @@ const BackgroundPanel: React.FC<{
 
       {tab === "patterns" && (
         <PanelCard className="p-6 text-center">
-          <div className="text-[13px] text-[#6b7280]">Pattern backgrounds coming soon</div>
+          <div className="text-[13px] text-[#6b7280]">
+            Pattern backgrounds coming soon
+          </div>
         </PanelCard>
       )}
     </div>
@@ -943,17 +1054,42 @@ const BackgroundPanel: React.FC<{
 
 /* ---------- draw ---------- */
 
-const DrawPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void }> = ({
-  onAddElement,
-}) => {
+const DrawPanel: React.FC<{
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onAddElement }) => {
   const shapes = [
-    { label: "Rectangle", icon: Square, shapeType: "rectangle" as const, w: 200, h: 150 },
-    { label: "Circle", icon: Circle, shapeType: "circle" as const, w: 150, h: 150 },
-    { label: "Triangle", icon: Triangle, shapeType: "triangle" as const, w: 180, h: 150 },
+    {
+      label: "Rectangle",
+      icon: Square,
+      shapeType: "rectangle" as const,
+      w: 200,
+      h: 150,
+    },
+    {
+      label: "Circle",
+      icon: Circle,
+      shapeType: "circle" as const,
+      w: 150,
+      h: 150,
+    },
+    {
+      label: "Triangle",
+      icon: Triangle,
+      shapeType: "triangle" as const,
+      w: 180,
+      h: 150,
+    },
     { label: "Line", icon: Minus, shapeType: "line" as const, w: 300, h: 4 },
   ];
 
-  const colors = ["#2f80ed", "#eb5757", "#f2c94c", "#27ae60", "#bb6bd9", "#111827"];
+  const colors = [
+    "#2f80ed",
+    "#eb5757",
+    "#f2c94c",
+    "#27ae60",
+    "#bb6bd9",
+    "#111827",
+  ];
 
   return (
     <div className="space-y-5">
@@ -980,7 +1116,9 @@ const DrawPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => voi
             >
               <div className="flex flex-col items-center gap-2 text-[#51627c]">
                 <shape.icon size={24} strokeWidth={1.6} />
-                <span className="text-[12px] font-medium text-[#243b63]">{shape.label}</span>
+                <span className="text-[12px] font-medium text-[#243b63]">
+                  {shape.label}
+                </span>
               </div>
             </button>
           ))}
@@ -1019,20 +1157,75 @@ const DrawPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => voi
 /* ---------- layout ---------- */
 
 const IMAGE_SIZES: CanvasSizePreset[] = [
-  { label: "Instagram Post", width: 1080, height: 1080, description: "1080 × 1080" },
-  { label: "Instagram Story", width: 1080, height: 1920, description: "1080 × 1920" },
-  { label: "Instagram Portrait", width: 1080, height: 1350, description: "1080 × 1350" },
-  { label: "Flyer (US Letter)", width: 2550, height: 3300, description: "8.5 × 11in" },
-  { label: "Facebook Post", width: 1200, height: 630, description: "1200 × 630" },
-  { label: "Twitter/X Post", width: 1200, height: 675, description: "1200 × 675" },
-  { label: "YouTube Thumbnail", width: 1280, height: 720, description: "1280 × 720" },
+  {
+    label: "Instagram Post",
+    width: 1080,
+    height: 1080,
+    description: "1080 × 1080",
+  },
+  {
+    label: "Instagram Story",
+    width: 1080,
+    height: 1920,
+    description: "1080 × 1920",
+  },
+  {
+    label: "Instagram Portrait",
+    width: 1080,
+    height: 1350,
+    description: "1080 × 1350",
+  },
+  {
+    label: "Flyer (US Letter)",
+    width: 2550,
+    height: 3300,
+    description: "8.5 × 11in",
+  },
+  {
+    label: "Facebook Post",
+    width: 1200,
+    height: 630,
+    description: "1200 × 630",
+  },
+  {
+    label: "Twitter/X Post",
+    width: 1200,
+    height: 675,
+    description: "1200 × 675",
+  },
+  {
+    label: "YouTube Thumbnail",
+    width: 1280,
+    height: 720,
+    description: "1280 × 720",
+  },
 ];
 
 const VIDEO_SIZES: CanvasSizePreset[] = [
-  { label: "Instagram Reel", width: 1080, height: 1920, description: "9:16 vertical" },
-  { label: "YouTube Video", width: 1920, height: 1080, description: "16:9 landscape" },
-  { label: "TikTok Video", width: 1080, height: 1920, description: "9:16 vertical" },
-  { label: "Square Video", width: 1080, height: 1080, description: "1:1 square" },
+  {
+    label: "Instagram Reel",
+    width: 1080,
+    height: 1920,
+    description: "9:16 vertical",
+  },
+  {
+    label: "YouTube Video",
+    width: 1920,
+    height: 1080,
+    description: "16:9 landscape",
+  },
+  {
+    label: "TikTok Video",
+    width: 1080,
+    height: 1920,
+    description: "9:16 vertical",
+  },
+  {
+    label: "Square Video",
+    width: 1080,
+    height: 1080,
+    description: "1:1 square",
+  },
 ];
 
 const LayoutPanel: React.FC<{
@@ -1047,7 +1240,11 @@ const LayoutPanel: React.FC<{
 
   return (
     <div>
-      <SearchBar placeholder="Search sizes" value={search} onChange={setSearch} />
+      <SearchBar
+        placeholder="Search sizes"
+        value={search}
+        onChange={setSearch}
+      />
 
       <PanelCard className="overflow-hidden">
         <div className="divide-y divide-[#edf1f5]">
@@ -1057,8 +1254,12 @@ const LayoutPanel: React.FC<{
               onClick={() => onCanvasSizeChange(item)}
               className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-[#f7fafc]"
             >
-              <span className="text-[13px] font-medium text-[#243b63]">{item.label}</span>
-              <span className="text-[12px] text-[#7c8798]">{item.description}</span>
+              <span className="text-[13px] font-medium text-[#243b63]">
+                {item.label}
+              </span>
+              <span className="text-[12px] text-[#7c8798]">
+                {item.description}
+              </span>
             </button>
           ))}
         </div>
@@ -1069,9 +1270,9 @@ const LayoutPanel: React.FC<{
 
 /* ---------- ai ---------- */
 
-const AIPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void }> = ({
-  onAddElement,
-}) => {
+const AIPanel: React.FC<{
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onAddElement }) => {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState("text");
 
@@ -1083,7 +1284,9 @@ const AIPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void 
             <Sparkles size={18} />
           </div>
           <div>
-            <div className="text-[14px] font-semibold text-[#243b63]">AI Design Assistant</div>
+            <div className="text-[14px] font-semibold text-[#243b63]">
+              AI Design Assistant
+            </div>
             <div className="text-[13px] text-[#6b7280]">
               Describe what you want to create and let AI help.
             </div>
@@ -1091,7 +1294,11 @@ const AIPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void 
         </div>
       </PanelCard>
 
-      <SegmentedTabs tabs={["text", "image"]} active={mode} onChange={setMode} />
+      <SegmentedTabs
+        tabs={["text", "image"]}
+        active={mode}
+        onChange={setMode}
+      />
 
       <textarea
         value={prompt}
@@ -1134,9 +1341,9 @@ const AIPanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void 
 
 /* ---------- qrcode ---------- */
 
-const QRCodePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void }> = ({
-  onAddElement,
-}) => {
+const QRCodePanel: React.FC<{
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onAddElement }) => {
   const [url, setUrl] = useState("https://example.com");
   const [fgColor, setFgColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
@@ -1159,7 +1366,9 @@ const QRCodePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => v
   return (
     <div className="space-y-4">
       <PanelCard className="p-4">
-        <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">URL or text</label>
+        <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">
+          URL or text
+        </label>
         <input
           type="text"
           value={url}
@@ -1170,7 +1379,9 @@ const QRCodePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => v
 
       <div className="grid grid-cols-2 gap-3">
         <PanelCard className="p-3">
-          <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">Foreground</label>
+          <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">
+            Foreground
+          </label>
           <input
             type="color"
             value={fgColor}
@@ -1180,7 +1391,9 @@ const QRCodePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => v
         </PanelCard>
 
         <PanelCard className="p-3">
-          <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">Background</label>
+          <label className="mb-2 block text-[12px] font-medium text-[#5b6577]">
+            Background
+          </label>
           <input
             type="color"
             value={bgColor}
@@ -1209,7 +1422,9 @@ const RecordPanel: React.FC = () => (
         <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-[#feecee]">
           <div className="h-6 w-6 rounded-full bg-[#e5484d]" />
         </div>
-        <div className="text-[14px] font-semibold text-[#2b2150]">Record yourself</div>
+        <div className="text-[14px] font-semibold text-[#2b2150]">
+          Record yourself
+        </div>
         <div className="mt-1 text-[13px] text-[#6b7890]">
           Record your camera or screen and add it to your design.
         </div>
@@ -1229,7 +1444,8 @@ const SlideshowPanel: React.FC = () => (
     <PanelCard className="p-4">
       <div className="text-[14px] font-semibold text-[#243b63]">Slideshow</div>
       <div className="mt-1 text-[13px] text-[#6b7280]">
-        Create a slideshow by adding multiple slides with transitions and timing.
+        Create a slideshow by adding multiple slides with transitions and
+        timing.
       </div>
     </PanelCard>
 
@@ -1241,9 +1457,9 @@ const SlideshowPanel: React.FC = () => (
 
 /* ---------- table ---------- */
 
-const TablePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => void }> = ({
-  onAddElement,
-}) => {
+const TablePanel: React.FC<{
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onAddElement }) => {
   const [rows, setRows] = useState(3);
   const [cols, setCols] = useState(3);
 
@@ -1276,7 +1492,9 @@ const TablePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => vo
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-[12px] text-[#6b7280]">Rows</label>
+            <label className="mb-1 block text-[12px] text-[#6b7280]">
+              Rows
+            </label>
             <input
               type="number"
               min="1"
@@ -1287,7 +1505,9 @@ const TablePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => vo
             />
           </div>
           <div>
-            <label className="mb-1 block text-[12px] text-[#6b7280]">Columns</label>
+            <label className="mb-1 block text-[12px] text-[#6b7280]">
+              Columns
+            </label>
             <input
               type="number"
               min="1"
@@ -1301,7 +1521,7 @@ const TablePanel: React.FC<{ onAddElement: (el: Omit<CanvasElement, "id">) => vo
       </PanelCard>
 
       <button
-        onClick={addTable}   
+        onClick={addTable}
         className="h-11 w-full rounded-xl bg-[#7650e3] text-sm font-semibold text-white transition hover:bg-[#0b6798]"
       >
         Add table

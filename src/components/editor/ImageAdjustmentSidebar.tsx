@@ -460,6 +460,27 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
             }
           />
 
+          {effect.preset === "drop-shadow" ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className={ROW_LABEL}>Shadow Color</div>
+                <label className="flex h-8 w-10 cursor-pointer items-center justify-center rounded-[3px] border border-[#d7dce3] bg-white p-1">
+                  <input
+                    type="color"
+                    value={effect.shadowColor}
+                    onChange={(event) =>
+                      updateEffect({
+                        preset: "drop-shadow",
+                        shadowColor: event.target.value,
+                      })
+                    }
+                    className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+
           <SelectRow
             title="Glow"
             value={effect.preset === "neon-glow" ? "neon-glow" : "none"}

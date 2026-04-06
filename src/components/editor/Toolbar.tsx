@@ -79,7 +79,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const usesInspectorPanel = sidebarExpanded && activeTool === "draw";
 
   const [panelHeight, setPanelHeight] = React.useState<number | null>(null);
-  const [measuredTool, setMeasuredTool] = React.useState<ActiveTool | null>(null);
   const buttonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const [anchorRect, setAnchorRect] = React.useState<DOMRect | null>(null);
@@ -89,7 +88,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   React.useLayoutEffect(() => {
     if (!sidebarExpanded || !activeTool || activeTool === "select" || usesInspectorPanel) {
       setPanelHeight(null);
-      setMeasuredTool(null);
       return;
     }
 
@@ -105,7 +103,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       }
 
       setPanelHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-      setMeasuredTool(activeTool);
     };
 
     updateHeight();
@@ -148,24 +145,27 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   React.useEffect(() => {
     if (!sidebarExpanded || usesInspectorPanel) return;
 
-    const handleClickOutside = (event: MouseEvent) => {
+    const handlePointerDownOutside = (event: PointerEvent) => {
       const target = event.target as Node;
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
 
       const clickedToolbarButton = Object.values(buttonRefs.current).some(
-        (btn) => btn && btn.contains(target)
+        (btn) => btn && (path.includes(btn) || btn.contains(target))
       );
 
+      const clickedPanel = panelRef.current
+        ? path.includes(panelRef.current) || panelRef.current.contains(target)
+        : false;
+
       if (clickedToolbarButton) return;
-      if (panelRef.current?.contains(target)) return;
+      if (clickedPanel) return;
 
       onCloseSidebar();
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handlePointerDownOutside);
+    return () => document.removeEventListener("pointerdown", handlePointerDownOutside);
   }, [usesInspectorPanel, sidebarExpanded, onCloseSidebar]);
-
-  const isPanelMeasured = measuredTool === activeTool && panelHeight !== null;
 
   const floatingPosition = React.useMemo(() => {
     if (!anchorRect || !sidebarExpanded || typeof window === "undefined") return null;
@@ -232,15 +232,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <AnimatePresence>
         {sidebarExpanded && activeTool !== "select" && !usesInspectorPanel && anchorRect && floatingPosition && (
           <motion.div
-            key={activeTool}
             ref={panelRef}
             className="fixed z-40 w-[320px]"
             style={{
               top: floatingPosition.top,
               left: floatingPosition.left,
               maxHeight: floatingPosition.maxHeight,
-              visibility: isPanelMeasured ? "visible" : "hidden",
-              pointerEvents: isPanelMeasured ? "auto" : "none",
             }}
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}

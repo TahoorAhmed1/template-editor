@@ -862,25 +862,25 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
 
             {shadowMode !== "none" ? (
               <div className="space-y-4 rounded-[3px] border border-[#eef1f5] bg-[#fafbfd] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-[72px] whitespace-nowrap text-[12px] text-[#6b7280]">Color</div>
+                  <label className="flex h-8 w-12 cursor-pointer items-center justify-center rounded-[3px] border border-[#d7dce3] bg-white p-1">
+                    <input
+                      type="color"
+                      value={effect.shadowColor || CUSTOM_SHADOW_DEFAULTS.shadowColor}
+                      onChange={(event) =>
+                        updateEffect({
+                          preset: "drop-shadow",
+                          shadowColor: event.target.value,
+                        })
+                      }
+                      className="h-6 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                    />
+                  </label>
+                </div>
+
                 {shadowMode === "custom-shadow" ? (
                   <>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-[72px] whitespace-nowrap text-[12px] text-[#6b7280]">Color</div>
-                      <label className="flex h-8 w-12 cursor-pointer items-center justify-center rounded-[3px] border border-[#d7dce3] bg-white p-1">
-                        <input
-                          type="color"
-                          value={effect.shadowColor || CUSTOM_SHADOW_DEFAULTS.shadowColor}
-                          onChange={(event) =>
-                            updateEffect({
-                              preset: "drop-shadow",
-                              shadowColor: event.target.value,
-                            })
-                          }
-                          className="h-6 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-                        />
-                      </label>
-                    </div>
-
                     <ShadowControl
                       label="Opacity"
                       value={Math.round((effect.shadowOpacity || 0) * 100)}
