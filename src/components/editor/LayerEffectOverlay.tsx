@@ -1,6 +1,7 @@
 import React from "react";
 import type { CanvasElement } from "./EditorShell";
 import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
+import { getListMarkerColor, getListMarkerColumnWidth, getTextListItems, isTextListEnabled } from "./textListUtils";
 
 interface LayerEffectOverlayProps {
   elements: CanvasElement[];
@@ -45,6 +46,12 @@ const getTextFontStyle = (element: CanvasElement) => {
   }
 
   return style;
+};
+
+const getTextAlignment = (align?: CanvasElement["textAlign"]) => {
+  if (align === "center") return "center";
+  if (align === "right") return "flex-end";
+  return "flex-start";
 };
 
 const mapAdjustmentToPercent = (value: number | undefined) => {
@@ -364,14 +371,78 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
                     overflow: "visible",
                   }}
                 >
-                  <div
-                    style={{
-                      width: "100%",
-                      minHeight: baseHeight,
-                    }}
-                  >
-                    {element.content || ""}
-                  </div>
+                  {isTextListEnabled(element) ? (
+                    <div
+                      style={{
+                        width: "100%",
+                        minHeight: baseHeight,
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: getTextAlignment(element.textAlign),
+                        gap: 0,
+                      }}
+                    >
+                      {getTextListItems(element).map((item, index) => {
+                        const isOutside = (element.listPosition || "outside") === "outside";
+
+                        return (
+                          <div
+                            key={`${element.id}-list-item-${index}`}
+                            style={
+                              isOutside
+                                ? {
+                                    display: "grid",
+                                    gridTemplateColumns: `${getListMarkerColumnWidth(element)} minmax(0, 1fr)`,
+                                    columnGap: `${0.45 * scale}em`,
+                                    alignItems: "start",
+                                    width: "100%",
+                                  }
+                                : {
+                                    display: "block",
+                                    width: "100%",
+                                  }
+                            }
+                          >
+                            {isOutside ? (
+                              <span
+                                style={{
+                                  color: getListMarkerColor(element),
+                                  display: "inline-block",
+                                  textAlign: "right",
+                                  whiteSpace: "nowrap",
+                                  paddingRight: `${0.2 * scale}em`,
+                                }}
+                              >
+                                {item.marker}
+                              </span>
+                            ) : null}
+                            <span
+                              style={{
+                                display: "block",
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                                textAlign: element.textAlign || "left",
+                              }}
+                            >
+                              {!isOutside ? (
+                                <span style={{ color: getListMarkerColor(element) }}>{`${item.marker} `}</span>
+                              ) : null}
+                              {item.content || "\u00a0"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        minHeight: baseHeight,
+                      }}
+                    >
+                      {element.content || ""}
+                    </div>
+                  )}
                 </div>
               ) : element.type === "image" && element.src ? (
                 <div

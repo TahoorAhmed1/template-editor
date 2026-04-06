@@ -19,6 +19,14 @@ import {
 } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
 import { ArrangementControls, LockInPlaceControl, PositionSidebar } from "./PositionSidebar";
+import {
+  DEFAULT_LIST_BULLET_STYLE,
+  DEFAULT_LIST_NUMBER_STYLE,
+  getListBulletStyleValue,
+  getListNumberStyleValue,
+  type ListBulletStyle,
+  type ListNumberStyle,
+} from "./textListUtils";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 
 interface TextPropertiesSidebarProps {
@@ -100,6 +108,32 @@ const CUSTOM_SHADOW_DEFAULTS = {
   distance: 4,
   angle: 45,
 };
+
+const LIST_BULLET_OPTIONS: Array<{
+  label: string;
+  value: ListBulletStyle;
+  preview: string;
+}> = [
+  { label: "Solid", value: "disc", preview: "●" },
+  { label: "Ring", value: "ring", preview: "○" },
+  { label: "Filled Square", value: "square", preview: "■" },
+  { label: "Outline Square", value: "square-outline", preview: "□" },
+  { label: "Check", value: "check", preview: "☑" },
+  { label: "Arrow", value: "arrow", preview: "➜" },
+];
+
+const LIST_NUMBER_OPTIONS: Array<{
+  label: string;
+  value: ListNumberStyle;
+  preview: string;
+}> = [
+  { label: "1.", value: "decimal", preview: "1. 2. 3." },
+  { label: "01.", value: "decimal-leading-zero", preview: "01. 02. 03." },
+  { label: "A.", value: "upper-alpha", preview: "A. B. C." },
+  { label: "a.", value: "lower-alpha", preview: "a. b. c." },
+  { label: "I.", value: "upper-roman", preview: "I. II. III." },
+  { label: "i.", value: "lower-roman", preview: "i. ii. iii." },
+];
 
 const ROW_LABEL = "text-[11px] font-medium text-[#6b7280]";
 const DIVIDER = "border-t border-[#e5e7eb] pt-4";
@@ -374,6 +408,8 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [fontSearch, setFontSearch] = React.useState("");
   const [fontMenuOpen, setFontMenuOpen] = React.useState(false);
+  const [listBulletMenuOpen, setListBulletMenuOpen] = React.useState(false);
+  const [listNumberMenuOpen, setListNumberMenuOpen] = React.useState(false);
   const [shadowMenuOpen, setShadowMenuOpen] = React.useState(false);
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const isLocked = Boolean(selectedText.locked);
@@ -382,12 +418,17 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   const shadowMode = getShadowOptionValue(effect);
   const shadowDistance = getShadowDistance(effect);
   const shadowAngle = getShadowAngle(effect);
+  const activeListStyle = selectedText.listStyle || "none";
+  const activeBulletStyle = getListBulletStyleValue(selectedText);
+  const activeNumberStyle = getListNumberStyleValue(selectedText);
 
   React.useEffect(() => {
     setActivePanel("main");
   }, [selectedText.id]);
 
   React.useEffect(() => {
+    setListBulletMenuOpen(false);
+    setListNumberMenuOpen(false);
     setShadowMenuOpen(false);
   }, [selectedText.id]);
 
@@ -413,6 +454,22 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
         ...effect,
         ...updates,
       },
+    });
+  };
+
+  const activateBulletedList = (bulletStyle = activeBulletStyle) => {
+    updateText({
+      listStyle: "bulleted",
+      listBulletStyle: bulletStyle,
+      listMarkerColor: selectedText.listMarkerColor || selectedText.color || "#000000",
+    });
+  };
+
+  const activateNumberedList = (numberStyle = activeNumberStyle) => {
+    updateText({
+      listStyle: "numbered",
+      listNumberStyle: numberStyle,
+      listMarkerColor: selectedText.listMarkerColor || selectedText.color || "#000000",
     });
   };
 
@@ -471,6 +528,9 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
       linkUrl: selectedText.linkUrl,
       listStyle: selectedText.listStyle,
       listPosition: selectedText.listPosition,
+      listBulletStyle: selectedText.listBulletStyle,
+      listNumberStyle: selectedText.listNumberStyle,
+      listMarkerColor: selectedText.listMarkerColor,
       effectProps: effect,
     };
 
@@ -756,59 +816,168 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             onChange={(value) => updateText({ letterSpacing: value })}
           />
 
-          {/* <div className="space-y-2">
-            <div className={ROW_LABEL}>List</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="relative">
-                <select
-                  value={selectedText.listStyle || "none"}
-                  onChange={(event) =>
-                    updateText({
-                      listStyle: event.target.value as CanvasElement["listStyle"],
-                    })
-                  }
-                  className="h-9 w-full appearance-none rounded-[3px] border border-[#d7dce3] bg-white pl-9 pr-8 text-[12px] text-[#2f3742] outline-none"
-                >
-                  <option value="none">None</option>
-                  <option value="bulleted">Bulleted</option>
-                  <option value="numbered">Numbered</option>
-                </select>
-                {(selectedText.listStyle || "none") === "numbered" ? (
-                  <ListOrdered
-                    size={14}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8a94a3]"
-                  />
-                ) : (
-                  <List
-                    size={14}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8a94a3]"
-                  />
-                )}
-                <ChevronDown
-                  size={13}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8a94a3]"
-                />
-              </div>
-              <div className="relative">
-                <select
-                  value={selectedText.listPosition || "outside"}
-                  onChange={(event) =>
-                    updateText({
-                      listPosition: event.target.value as CanvasElement["listPosition"],
-                    })
-                  }
-                  className="h-9 w-full appearance-none rounded-[3px] border border-[#d7dce3] bg-white pl-3 pr-8 text-[12px] text-[#2f3742] outline-none"
-                >
-                  <option value="outside">Outside</option>
-                  <option value="inside">Inside</option>
-                </select>
-                <ChevronDown
-                  size={13}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8a94a3]"
-                />
+          <div className="space-y-3 py-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className={`${ROW_LABEL} pt-3`}>List</div>
+              <div className="flex items-center gap-3">
+                <div className="relative flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeListStyle === "bulleted") {
+                        updateText({ listStyle: "none" });
+                        setListBulletMenuOpen(false);
+                        return;
+                      }
+
+                      activateBulletedList(activeBulletStyle || DEFAULT_LIST_BULLET_STYLE);
+                    }}
+                    className={`flex h-10 w-12 items-center justify-center rounded-[4px] border transition ${
+                      activeListStyle === "bulleted"
+                        ? "border-[#BEE7FB] bg-[#EDF8FF] text-[#2D3758]"
+                        : "border-[#D7DEE8] bg-white text-[#667085] hover:bg-[#F8FAFC]"
+                    }`}
+                    aria-pressed={activeListStyle === "bulleted"}
+                    title="Bulleted list"
+                  >
+                    <List size={16} strokeWidth={1.7} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListBulletMenuOpen((open) => !open);
+                      setListNumberMenuOpen(false);
+                      if (activeListStyle !== "bulleted") {
+                        activateBulletedList(activeBulletStyle || DEFAULT_LIST_BULLET_STYLE);
+                      }
+                    }}
+                    className={`flex h-10 w-7 items-center justify-center rounded-[4px] border transition ${
+                      listBulletMenuOpen || activeListStyle === "bulleted"
+                        ? "border-[#BEE7FB] bg-[#EDF8FF] text-[#2D3758]"
+                        : "border-[#D7DEE8] bg-white text-[#667085] hover:bg-[#F8FAFC]"
+                    }`}
+                    aria-label="Choose bullet style"
+                  >
+                    <ChevronDown size={15} strokeWidth={1.8} />
+                  </button>
+                  {listBulletMenuOpen ? (
+                    <div className="absolute left-1/2 top-[calc(100%+10px)] z-20 w-[216px] -translate-x-1/2 rounded-[18px] border border-[#D7DEE8] bg-white p-3 shadow-[0_18px_38px_rgba(15,23,42,0.12)]">
+                      <div className="grid grid-cols-4 gap-2">
+                        {LIST_BULLET_OPTIONS.map((option) => {
+                          const isSelected = activeBulletStyle === option.value;
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                activateBulletedList(option.value);
+                                setListBulletMenuOpen(false);
+                              }}
+                              title={option.label}
+                              className={`flex h-10 w-full min-w-0 items-center justify-center rounded-[10px] border transition ${
+                                isSelected
+                                  ? "border-[#BEE7FB] bg-[#EDF8FF] text-[#111827]"
+                                  : "border-transparent bg-white text-[#111827] hover:bg-[#F8FAFC]"
+                              }`}
+                            >
+                              <span className="text-[18px] leading-none">{option.preview}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="relative flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeListStyle === "numbered") {
+                        updateText({ listStyle: "none" });
+                        setListNumberMenuOpen(false);
+                        return;
+                      }
+
+                      activateNumberedList(activeNumberStyle || DEFAULT_LIST_NUMBER_STYLE);
+                    }}
+                    className={`flex h-10 w-12 items-center justify-center rounded-[4px] border transition ${
+                      activeListStyle === "numbered"
+                        ? "border-[#BEE7FB] bg-[#EDF8FF] text-[#2D3758]"
+                        : "border-[#D7DEE8] bg-white text-[#667085] hover:bg-[#F8FAFC]"
+                    }`}
+                    aria-pressed={activeListStyle === "numbered"}
+                    title="Numbered list"
+                  >
+                    <ListOrdered size={16} strokeWidth={1.7} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListNumberMenuOpen((open) => !open);
+                      setListBulletMenuOpen(false);
+                      if (activeListStyle !== "numbered") {
+                        activateNumberedList(activeNumberStyle || DEFAULT_LIST_NUMBER_STYLE);
+                      }
+                    }}
+                    className={`flex h-10 w-7 items-center justify-center rounded-[4px] border transition ${
+                      listNumberMenuOpen || activeListStyle === "numbered"
+                        ? "border-[#BEE7FB] bg-[#EDF8FF] text-[#2D3758]"
+                        : "border-[#D7DEE8] bg-white text-[#667085] hover:bg-[#F8FAFC]"
+                    }`}
+                    aria-label="Choose number style"
+                  >
+                    <ChevronDown size={15} strokeWidth={1.8} />
+                  </button>
+                  {listNumberMenuOpen ? (
+                    <div className="absolute right-0 top-[calc(100%+10px)] z-20 w-[216px] rounded-[18px] border border-[#D7DEE8] bg-white p-3 shadow-[0_18px_38px_rgba(15,23,42,0.12)]">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                        {LIST_NUMBER_OPTIONS.map((option) => {
+                          const isSelected = activeNumberStyle === option.value;
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                activateNumberedList(option.value);
+                                setListNumberMenuOpen(false);
+                              }}
+                              className={`min-w-0 rounded-[10px] px-2 py-1.5 text-left transition ${
+                                isSelected ? "bg-[#F8FAFC] text-[#111827]" : "text-[#111827] hover:bg-[#F8FAFC]"
+                              }`}
+                              title={option.label}
+                            >
+                              <span className="block min-w-0 overflow-hidden font-['Georgia',serif] text-[13px] leading-5 tracking-normal whitespace-nowrap">
+                                {option.preview}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div> */}
+
+            {activeListStyle !== "none" ? (
+              <div className="space-y-3 border-t border-[#EEF1F5] pt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className={ROW_LABEL}>Color</div>
+                  <label className="flex h-10 w-12 cursor-pointer items-center justify-center rounded-[4px] border border-[#D7DCE3] bg-white p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+                    <input
+                      type="color"
+                      value={selectedText.listMarkerColor || selectedText.color || "#000000"}
+                      onChange={(event) => updateText({ listMarkerColor: event.target.value })}
+                      className="h-8 w-10 cursor-pointer rounded-[3px] border-0 bg-transparent p-0"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <ToggleSwitch
             label="Background"

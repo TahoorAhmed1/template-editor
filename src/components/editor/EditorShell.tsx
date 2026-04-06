@@ -157,6 +157,9 @@ export interface CanvasElement {
   linkUrl?: string;
   listStyle?: "none" | "bulleted" | "numbered";
   listPosition?: "outside" | "inside";
+  listBulletStyle?: "disc" | "ring" | "square" | "square-outline" | "check" | "arrow";
+  listNumberStyle?: "decimal" | "decimal-leading-zero" | "upper-alpha" | "lower-alpha" | "upper-roman" | "lower-roman";
+  listMarkerColor?: string;
   lineHeight?: number;
   letterSpacing?: number;
   shapeType?: "rectangle" | "circle" | "triangle" | "line";

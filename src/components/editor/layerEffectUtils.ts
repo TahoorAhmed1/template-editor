@@ -1,4 +1,5 @@
 import type { CanvasElement } from "./EditorShell";
+import { isTextListEnabled } from "./textListUtils";
 
 export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
   if (element.type !== "text" && element.type !== "image") return false;
@@ -15,7 +16,7 @@ export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
       (effect?.shadowOpacity ?? 0) > 0;
     const hasTextStroke = (effect?.strokeWidth ?? 0) > 0;
 
-    return Boolean(element.textBackgroundColor || hasTextShadow || hasTextStroke);
+    return Boolean(element.textBackgroundColor || hasTextShadow || hasTextStroke || isTextListEnabled(element));
   }
 
   const effect = element.effectProps;

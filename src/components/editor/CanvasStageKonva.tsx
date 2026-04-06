@@ -17,6 +17,7 @@ import { getLinearGradientPoints as getSharedLinearGradientPoints, getRadialGrad
 import type { TemplateViewportState } from "./templateTypes";
 import { LayerEffectOverlay } from "./LayerEffectOverlay";
 import { shouldUseDomEffectOverlay } from "./layerEffectUtils";
+import { getTextDisplayContent } from "./textListUtils";
 import { useTextEditStore } from "@/stores/useTextEditStore";
 
 const konvaWithTextFix = Konva as typeof Konva & {
@@ -825,10 +826,7 @@ function shouldShowTransformGhost(element: CanvasElement) {
 
 function measureTextBox(element: CanvasElement, width: number, fontSize: number) {
   const probe = new Konva.Text({
-    text:
-      element.textTransform === "uppercase"
-        ? (element.content || "").toUpperCase()
-        : element.content || "",
+    text: getTextDisplayContent(element, true),
     width: Math.max(1, width),
     fontSize,
     fontFamily: element.fontFamily || "sans-serif",
@@ -3587,8 +3585,8 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
     const renderable = getRenderableLayer(element);
     const useDomOverlay = shouldUseDomEffectOverlay(element);
     const textContent =
-      renderable.type === "text" && renderable.textTransform === "uppercase"
-        ? (renderable.content || "").toUpperCase()
+      renderable.type === "text"
+        ? getTextDisplayContent(renderable, true)
         : renderable.content || "";
     const baseConfig = {
       id: renderable.id,
