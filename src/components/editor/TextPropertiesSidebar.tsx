@@ -413,6 +413,7 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   const [shadowMenuOpen, setShadowMenuOpen] = React.useState(false);
   const requestTextEdit = useTextEditStore((state) => state.requestTextEdit);
   const isLocked = Boolean(selectedText.locked);
+  const editingDisabled = Boolean(selectedText.disableTextEditing);
   const effect = normalizeEffectProps(selectedText);
   const lineHeightUi = Math.round((selectedText.lineHeight ?? 1.2) * 100);
   const shadowMode = getShadowOptionValue(effect);
@@ -445,6 +446,10 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
   };
 
   const startCanvasEdit = () => {
+    if (editingDisabled) {
+      return;
+    }
+
     requestTextEdit(selectedText.id);
   };
 
@@ -574,11 +579,13 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
           label="Duplicate"
           onClick={onDuplicate}
         />
-        <ActionButton
-          icon={<Type size={13} />}
-          label="Edit"
-          onClick={startCanvasEdit}
-        />
+        {editingDisabled ? null : (
+          <ActionButton
+            icon={<Type size={13} />}
+            label="Edit"
+            onClick={startCanvasEdit}
+          />
+        )}
         {/* <ActionButton label="Copy Style" onClick={handleCopyStyle} /> */}
         <ActionButton
           icon={<Trash2 size={13} />}
@@ -612,13 +619,6 @@ export const TextPropertiesSidebar: React.FC<TextPropertiesSidebarProps> = ({
             placeholder="Type your text"
             className="min-h-[120px] w-full resize-y rounded-[3px]  border border-[#d7dce3] bg-white px-3 py-2 text-[13px] leading-5 text-[#1f2937] outline-none focus:ring-1 focus:ring-[#9ed8fb]"
           />
-          <button
-            type="button"
-            onClick={startCanvasEdit}
-            className="inline-flex h-9 items-center justify-center  rounded-[3px] border border-[#d7dce3] bg-[#f8fafc] px-3 text-[12px] font-medium text-[#7650e3] transition "
-          >
-            Edit directly on canvas
-          </button>
         </div>
       </Section>
 

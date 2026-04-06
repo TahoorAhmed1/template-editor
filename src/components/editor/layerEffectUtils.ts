@@ -15,8 +15,17 @@ export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
       Math.abs(effect?.shadowOffsetY ?? 0) > 0 ||
       (effect?.shadowOpacity ?? 0) > 0;
     const hasTextStroke = (effect?.strokeWidth ?? 0) > 0;
+    const hasTextGradient = (element.textGradientColors?.length ?? 0) > 1;
+    const hasTextShape = Boolean(element.textShape && element.textShape !== "straight");
 
-    return Boolean(element.textBackgroundColor || hasTextShadow || hasTextStroke || isTextListEnabled(element));
+    return Boolean(
+      element.textBackgroundColor ||
+      hasTextShadow ||
+      hasTextStroke ||
+      hasTextGradient ||
+      hasTextShape ||
+      isTextListEnabled(element),
+    );
   }
 
   const effect = element.effectProps;

@@ -4,6 +4,7 @@ import {
   Activity,
   Airplay,
   AlarmClock,
+  ArrowLeft,
   Anchor,
   Aperture,
   Archive,
@@ -23,6 +24,7 @@ import {
   Candy,
   Car,
   Cherry,
+  Check,
   Cloud,
   Clover,
   Compass,
@@ -78,6 +80,7 @@ import {
   Trophy,
   Umbrella,
   Waves,
+  X,
   Zap,
   Captions,
   List,
@@ -90,6 +93,7 @@ import type {
   EditorMode,
   CanvasSizePreset,
   DrawSettings,
+  LayerEffectProps,
 } from "./EditorShell";
 import { API } from "@/services/api";
 import {
@@ -358,6 +362,820 @@ const createShapeAssetDataUrl = (icon: LucideIcon, color: string) => {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
+type FancyTextFontOption = {
+  id: string;
+  label: string;
+  fontFamily: string;
+  fontWeight?: string;
+};
+
+type FancyTextStylePreset = {
+  id: string;
+  label: string;
+  description: string;
+  defaultFontId: string;
+  palette: string[];
+  fontSize: number;
+  fontWeight: string;
+  textTransform: "none" | "uppercase";
+  letterSpacing: number;
+  lineHeight: number;
+  effect: Partial<LayerEffectProps>;
+};
+
+type FancyTextShapeOption = {
+  value: NonNullable<CanvasElement["textShape"]>;
+  label: string;
+};
+
+const createToolbarDefaultEffectProps = (): LayerEffectProps => ({
+  preset: "none",
+  glowColor: "#7650e3",
+  glowIntensity: 18,
+  shadowColor: "#0f172a",
+  shadowBlur: 0,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowOpacity: 0,
+  glassBlur: 18,
+  glassOpacity: 0.18,
+  strokeColor: "#ffffff",
+  strokeWidth: 0,
+  blendMode: "normal",
+  pulseSpeed: 1,
+});
+
+const FANCY_TEXT_FONTS: FancyTextFontOption[] = [
+  { id: "bungee", label: "Bungee", fontFamily: "'Bungee', cursive", fontWeight: "400" },
+  { id: "berkshire", label: "Berkshire Swash", fontFamily: "'Berkshire Swash', cursive", fontWeight: "400" },
+  { id: "bevan", label: "Bevan", fontFamily: "'Bevan', serif", fontWeight: "400" },
+  { id: "bowlby", label: "Bowlby One SC", fontFamily: "'Bowlby One SC', cursive", fontWeight: "400" },
+  { id: "bree", label: "Bree Serif", fontFamily: "'Bree Serif', serif", fontWeight: "400" },
+  { id: "righteous", label: "Righteous", fontFamily: "'Righteous', sans-serif", fontWeight: "400" },
+  { id: "bebas", label: "Bebas Neue", fontFamily: "'Bebas Neue', sans-serif", fontWeight: "400" },
+  { id: "monoton", label: "Monoton", fontFamily: "'Monoton', cursive", fontWeight: "400" },
+];
+
+const FANCY_TEXT_STYLES: FancyTextStylePreset[] = [
+  {
+    id: "retro",
+    label: "Retro",
+    description: "Bold headline with a poster feel",
+    defaultFontId: "righteous",
+    palette: ["#E33452", "#0E6177", "#F8F5EB"],
+    fontSize: 76,
+    fontWeight: "400",
+    textTransform: "none",
+    letterSpacing: -1,
+    lineHeight: 1,
+    effect: {
+      preset: "drop-shadow",
+      shadowColor: "#0E6177",
+      shadowBlur: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 5,
+      shadowOpacity: 0.25,
+      strokeWidth: 1,
+      strokeColor: "#F8F5EB",
+    },
+  },
+  {
+    id: "glow",
+    label: "Glow",
+    description: "Neon text with bright edge lighting",
+    defaultFontId: "monoton",
+    palette: ["#FF4AA2", "#52F1FF", "#FFF2A8"],
+    fontSize: 68,
+    fontWeight: "400",
+    textTransform: "none",
+    letterSpacing: 1.5,
+    lineHeight: 1,
+    effect: {
+      preset: "neon-glow",
+      glowColor: "#FF4AA2",
+      glowIntensity: 22,
+      strokeWidth: 1,
+      strokeColor: "#ffffff",
+    },
+  },
+  {
+    id: "classified",
+    label: "Classified",
+    description: "Stamped editorial text with grit",
+    defaultFontId: "bebas",
+    palette: ["#D72626", "#6E1111", "#F6E9E9"],
+    fontSize: 84,
+    fontWeight: "400",
+    textTransform: "uppercase",
+    letterSpacing: 2.4,
+    lineHeight: 1,
+    effect: {
+      preset: "drop-shadow",
+      shadowColor: "#8B1E1E",
+      shadowBlur: 4,
+      shadowOffsetX: 2,
+      shadowOffsetY: 3,
+      shadowOpacity: 0.28,
+      strokeWidth: 1,
+      strokeColor: "#F6E9E9",
+    },
+  },
+  {
+    id: "baby",
+    label: "Baby",
+    description: "Soft script for playful captions",
+    defaultFontId: "berkshire",
+    palette: ["#67D5D0", "#F59BC7", "#FFF4E8"],
+    fontSize: 70,
+    fontWeight: "400",
+    textTransform: "none",
+    letterSpacing: 0,
+    lineHeight: 1.02,
+    effect: {
+      preset: "drop-shadow",
+      shadowColor: "#0f172a",
+      shadowBlur: 7,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      shadowOpacity: 0.14,
+    },
+  },
+  {
+    id: "club",
+    label: "Club",
+    description: "High-energy uppercase for posters",
+    defaultFontId: "bungee",
+    palette: ["#7C3AED", "#38BDF8", "#F8FAFC"],
+    fontSize: 72,
+    fontWeight: "400",
+    textTransform: "uppercase",
+    letterSpacing: 1.4,
+    lineHeight: 0.98,
+    effect: {
+      preset: "neon-glow",
+      glowColor: "#7C3AED",
+      glowIntensity: 18,
+      strokeWidth: 1,
+      strokeColor: "#F8FAFC",
+    },
+  },
+  {
+    id: "techno",
+    label: "Techno",
+    description: "Sharper edges with cool contrast",
+    defaultFontId: "bowlby",
+    palette: ["#0F766E", "#38BDF8", "#E6FFFB"],
+    fontSize: 74,
+    fontWeight: "400",
+    textTransform: "uppercase",
+    letterSpacing: 1.8,
+    lineHeight: 1,
+    effect: {
+      preset: "drop-shadow",
+      shadowColor: "#0A4F57",
+      shadowBlur: 8,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      shadowOpacity: 0.22,
+      strokeWidth: 2,
+      strokeColor: "#E6FFFB",
+    },
+  },
+];
+
+const FANCY_TEXT_SHAPES: FancyTextShapeOption[] = [
+  { value: "straight", label: "Straight" },
+  { value: "curve-up", label: "Curve Up" },
+  { value: "curve-down", label: "Curve Down" },
+  { value: "wave", label: "Wave" },
+  { value: "wedge-left", label: "Wedge Left" },
+];
+
+const normalizeFancyHexColor = (value: string, fallback: string) => {
+  const trimmed = value.trim();
+  const prefixed = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+
+  if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(prefixed)) {
+    return fallback.toUpperCase();
+  }
+
+  if (prefixed.length === 4) {
+    const red = prefixed[1];
+    const green = prefixed[2];
+    const blue = prefixed[3];
+    return `#${red}${red}${green}${green}${blue}${blue}`.toUpperCase();
+  }
+
+  return prefixed.toUpperCase();
+};
+
+const buildFancyGradient = (colors: string[]) => {
+  if (colors.length < 2) {
+    return undefined;
+  }
+
+  const step = colors.length === 1 ? 100 : 100 / (colors.length - 1);
+  const stops = colors.map((color, index) => `${color} ${Math.round(index * step)}%`);
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+};
+
+const buildFancyTextPath = (shape: NonNullable<CanvasElement["textShape"]>, amount: number, width: number, height: number) => {
+  const inset = Math.min(28, width * 0.06);
+  const usableWidth = Math.max(width - inset * 2, 24);
+  const baseY = height * 0.58;
+  const amountRatio = Math.max(0, Math.min(1, amount / 100));
+  const amplitude = Math.max(12, amountRatio * height * 0.28);
+  const shouldUseCurveArc = shape === "curve-up" || shape === "curve-down";
+
+  if (shouldUseCurveArc) {
+    const radius = Math.max(24, Math.min(usableWidth / 2, height * 0.34));
+    const centerX = inset + usableWidth / 2;
+    const centerY = height / 2;
+    const fullCircleThreshold = 0.9995;
+    const isFullCircle = amountRatio >= fullCircleThreshold;
+
+    if (isFullCircle) {
+      const startY = shape === "curve-up" ? centerY + radius : centerY - radius;
+      const verticalDelta = shape === "curve-up" ? -radius * 2 : radius * 2;
+      return `M ${centerX} ${startY} a ${radius} ${radius} 0 1 1 0 ${verticalDelta} a ${radius} ${radius} 0 1 1 0 ${-verticalDelta}`;
+    }
+
+    const sweepDeg = 110 + amountRatio * 248;
+    const centerAngleDeg = shape === "curve-up" ? -90 : 90;
+    const startAngleDeg = centerAngleDeg - sweepDeg / 2;
+    const endAngleDeg = centerAngleDeg + sweepDeg / 2;
+    const startAngleRad = (startAngleDeg * Math.PI) / 180;
+    const endAngleRad = (endAngleDeg * Math.PI) / 180;
+    const startX = centerX + radius * Math.cos(startAngleRad);
+    const startY = centerY + radius * Math.sin(startAngleRad);
+    const endX = centerX + radius * Math.cos(endAngleRad);
+    const endY = centerY + radius * Math.sin(endAngleRad);
+    const largeArcFlag = sweepDeg > 180 ? 1 : 0;
+
+    return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
+  }
+
+  switch (shape) {
+    case "wave":
+      return `M ${inset} ${baseY} C ${inset + usableWidth * 0.18} ${baseY - amplitude}, ${inset + usableWidth * 0.32} ${baseY - amplitude}, ${inset + usableWidth * 0.5} ${baseY} C ${inset + usableWidth * 0.68} ${baseY + amplitude}, ${inset + usableWidth * 0.82} ${baseY + amplitude}, ${width - inset} ${baseY}`;
+    case "wedge-left":
+      return `M ${inset} ${baseY - amplitude * 0.45} L ${width - inset} ${baseY + amplitude * 0.28}`;
+    default:
+      return `M ${inset} ${baseY} L ${width - inset} ${baseY}`;
+  }
+};
+
+const getFancyShapeTextValue = (value: string) =>
+  (value.trim() || "add your text").replace(/\r\n/g, "\n").split("\n").join(" ");
+
+const getFancyShapePathLength = (
+  shape: NonNullable<CanvasElement["textShape"]>,
+  amount: number,
+  width: number,
+  height: number,
+) => {
+  const inset = Math.min(28, width * 0.06);
+  const usableWidth = Math.max(width - inset * 2, 24);
+  const amountRatio = Math.max(0, Math.min(1, amount / 100));
+  const amplitude = Math.max(12, amountRatio * height * 0.28);
+  const shouldUseCurveArc = shape === "curve-up" || shape === "curve-down";
+
+  if (shouldUseCurveArc) {
+    const radius = Math.max(24, Math.min(usableWidth / 2, height * 0.34));
+    const fullCircleThreshold = 0.9995;
+    const isFullCircle = amountRatio >= fullCircleThreshold;
+    const sweepDeg = isFullCircle ? 360 : 110 + amountRatio * 248;
+    const sweepRadians = (Math.min(sweepDeg, 360) * Math.PI) / 180;
+    const arcLength = radius * sweepRadians;
+    const circleBlend = Math.max(0, Math.min(1, (amountRatio - 0.85) / 0.15));
+    const displayRatio = 0.94 - circleBlend * 0.22;
+    return arcLength * displayRatio;
+  }
+
+  switch (shape) {
+    case "wave":
+      return usableWidth + amplitude * 1.45;
+    case "wedge-left":
+      return Math.hypot(usableWidth, amplitude * 0.73);
+    default:
+      return usableWidth;
+  }
+};
+
+const getFittedFancyShapeFontSize = (
+  text: string,
+  baseFontSize: number,
+  letterSpacing: number,
+  availableLength: number,
+) => {
+  const safeText = text.trim();
+  if (!safeText) {
+    return baseFontSize;
+  }
+
+  const letters = safeText.replace(/\s/g, "").length;
+  const spaces = safeText.length - letters;
+  const gaps = Math.max(0, safeText.length - 1);
+  const estimatedLength =
+    letters * baseFontSize * 0.64 +
+    spaces * baseFontSize * 0.28 +
+    gaps * Math.max(letterSpacing, baseFontSize * 0.04);
+
+  if (estimatedLength <= 0) {
+    return baseFontSize;
+  }
+
+  const fitScale = Math.min(1, (availableLength * 0.94) / estimatedLength);
+  return Math.max(22, baseFontSize * fitScale);
+};
+
+const buildFancyTextShadow = (effect: LayerEffectProps) => {
+  const shadows: string[] = [];
+
+  if (effect.preset === "neon-glow" || effect.preset === "pulse") {
+    shadows.push(`0 0 ${Math.max(6, effect.glowIntensity * 0.55)}px ${effect.glowColor}`);
+    shadows.push(`0 0 ${Math.max(10, effect.glowIntensity)}px ${effect.glowColor}`);
+  }
+
+  const hasShadow =
+    effect.preset === "drop-shadow" ||
+    effect.shadowBlur > 0 ||
+    Math.abs(effect.shadowOffsetX) > 0 ||
+    Math.abs(effect.shadowOffsetY) > 0 ||
+    effect.shadowOpacity > 0;
+
+  if (hasShadow) {
+    const alpha = Math.max(0, Math.min(1, effect.shadowOpacity || 0));
+    const color = effect.shadowColor;
+    const red = Number.parseInt(color.slice(1, 3), 16);
+    const green = Number.parseInt(color.slice(3, 5), 16);
+    const blue = Number.parseInt(color.slice(5, 7), 16);
+    shadows.push(
+      `${effect.shadowOffsetX}px ${effect.shadowOffsetY}px ${effect.shadowBlur}px rgba(${red}, ${green}, ${blue}, ${alpha})`,
+    );
+  }
+
+  return shadows.length > 0 ? shadows.join(", ") : undefined;
+};
+
+const getFancyFontById = (fontId: string) =>
+  FANCY_TEXT_FONTS.find((font) => font.id === fontId) || FANCY_TEXT_FONTS[0];
+
+const FancyTextComposer: React.FC<{
+  onClose: () => void;
+  onAddElement: (el: Omit<CanvasElement, "id">) => void;
+}> = ({ onClose, onAddElement }) => {
+  const [selectedStyleId, setSelectedStyleId] = useState(FANCY_TEXT_STYLES[0].id);
+  const [selectedFontId, setSelectedFontId] = useState(FANCY_TEXT_STYLES[0].defaultFontId);
+  const [draftText, setDraftText] = useState("add your text");
+  const [customPalette, setCustomPalette] = useState(() => [...FANCY_TEXT_STYLES[0].palette]);
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
+  const [draftColorValue, setDraftColorValue] = useState(FANCY_TEXT_STYLES[0].palette[0]);
+  const [selectedTextShape, setSelectedTextShape] = useState<NonNullable<CanvasElement["textShape"]>>("straight");
+  const [shapeAmount, setShapeAmount] = useState(64);
+
+  const selectedStyle =
+    FANCY_TEXT_STYLES.find((style) => style.id === selectedStyleId) || FANCY_TEXT_STYLES[0];
+  const selectedFont = getFancyFontById(selectedFontId);
+  const activeStopColor = customPalette[selectedColorIndex] || customPalette[0] || selectedStyle.palette[0];
+  const gradientColors = React.useMemo(
+    () => (customPalette.length > 0 ? [...customPalette] : [...selectedStyle.palette]),
+    [customPalette, selectedStyle.palette],
+  );
+  const primaryGradientColor = gradientColors[0] || selectedStyle.palette[0];
+  const gradientBackground = React.useMemo(
+    () => buildFancyGradient(gradientColors),
+    [gradientColors],
+  );
+
+  React.useEffect(() => {
+    setSelectedFontId(selectedStyle.defaultFontId);
+    setCustomPalette([...selectedStyle.palette]);
+    setSelectedColorIndex(0);
+    setDraftColorValue(selectedStyle.palette[0]);
+  }, [selectedStyle]);
+
+  React.useEffect(() => {
+    setDraftColorValue(activeStopColor);
+  }, [activeStopColor]);
+
+  const updatePaletteColor = React.useCallback((index: number, nextColor: string) => {
+    setCustomPalette((currentPalette) =>
+      currentPalette.map((color, colorIndex) => (colorIndex === index ? nextColor : color)),
+    );
+  }, []);
+
+  const commitDraftColorValue = React.useCallback(() => {
+    const fallbackColor = customPalette[selectedColorIndex] || selectedStyle.palette[selectedColorIndex] || selectedStyle.palette[0];
+    const normalizedColor = normalizeFancyHexColor(draftColorValue, fallbackColor);
+    updatePaletteColor(selectedColorIndex, normalizedColor);
+    setDraftColorValue(normalizedColor);
+  }, [customPalette, draftColorValue, selectedColorIndex, selectedStyle.palette, updatePaletteColor]);
+
+  const resetSelectedPaletteColor = React.useCallback(() => {
+    const resetColor = selectedStyle.palette[selectedColorIndex] || selectedStyle.palette[0];
+    updatePaletteColor(selectedColorIndex, resetColor);
+    setDraftColorValue(resetColor);
+  }, [selectedColorIndex, selectedStyle.palette, updatePaletteColor]);
+
+  const mergedEffect = React.useMemo(() => {
+    const defaults = createToolbarDefaultEffectProps();
+    const nextEffect: LayerEffectProps = {
+      ...defaults,
+      ...selectedStyle.effect,
+    };
+
+    if (nextEffect.preset === "neon-glow") {
+      nextEffect.glowColor = primaryGradientColor;
+    }
+
+    return nextEffect;
+  }, [primaryGradientColor, selectedStyle]);
+
+  const previewStyle: React.CSSProperties = {
+    color: gradientBackground ? "transparent" : primaryGradientColor,
+    fontFamily: selectedFont.fontFamily,
+    fontWeight: selectedFont.fontWeight || selectedStyle.fontWeight,
+    fontSize: `${Math.max(48, selectedStyle.fontSize * 0.74)}px`,
+    textTransform: selectedStyle.textTransform,
+    letterSpacing: `${selectedStyle.letterSpacing}px`,
+    lineHeight: String(selectedStyle.lineHeight),
+    textAlign: "center",
+    textShadow: buildFancyTextShadow(mergedEffect),
+    backgroundImage: gradientBackground,
+    WebkitBackgroundClip: gradientBackground ? "text" : undefined,
+    backgroundClip: gradientBackground ? "text" : undefined,
+    WebkitTextFillColor: gradientBackground ? "transparent" : undefined,
+    WebkitTextStroke:
+      mergedEffect.strokeWidth > 0
+        ? `${mergedEffect.strokeWidth}px ${mergedEffect.strokeColor}`
+        : undefined,
+  };
+
+  const previewShapeTextValue = React.useMemo(
+    () => getFancyShapeTextValue(draftText),
+    [draftText],
+  );
+  const previewShapePathLength = React.useMemo(
+    () => getFancyShapePathLength(selectedTextShape, shapeAmount, 420, 160),
+    [selectedTextShape, shapeAmount],
+  );
+  const previewShapeFontSize = React.useMemo(
+    () =>
+      getFittedFancyShapeFontSize(
+        previewShapeTextValue,
+        Math.max(46, selectedStyle.fontSize * 0.72),
+        selectedStyle.letterSpacing,
+        previewShapePathLength,
+      ),
+    [previewShapePathLength, previewShapeTextValue, selectedStyle.fontSize, selectedStyle.letterSpacing],
+  );
+
+  const handleAddFancyText = () => {
+    const usesCurvedShape = selectedTextShape !== "straight";
+
+    onAddElement({
+      type: "text",
+      disableTextEditing: true,
+      x: 120,
+      y: 120 + Math.random() * 90,
+      width: usesCurvedShape ? 620 : 540,
+      height: usesCurvedShape
+        ? Math.max(168, Math.round(selectedStyle.fontSize * 2))
+        : Math.max(110, Math.round(selectedStyle.fontSize * 1.45)),
+      content: draftText.trim() || "add your text",
+      fontSize: selectedStyle.fontSize,
+      fontFamily: selectedFont.fontFamily,
+      fontWeight: selectedFont.fontWeight || selectedStyle.fontWeight,
+      color: primaryGradientColor,
+      textGradientColors: gradientColors,
+      textGradientAngle: 90,
+      textAlign: "center",
+      textVerticalAlign: "middle",
+      textTransform: selectedStyle.textTransform,
+      textShape: selectedTextShape,
+      textShapeAmount: shapeAmount,
+      lineHeight: selectedStyle.lineHeight,
+      letterSpacing: selectedStyle.letterSpacing,
+      effectProps: mergedEffect,
+    });
+
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(53,52,79,0.68)] p-4">
+      <div className="flex h-[78vh] min-h-[560px] w-full max-w-[980px] flex-col overflow-hidden rounded-[10px] border border-[#d9dde8] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between border-b border-[#d9dde8] px-8 py-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-3 text-[15px] font-semibold text-[#3F4E6D] transition hover:text-[#1f2b46]"
+          >
+            <ArrowLeft size={20} strokeWidth={1.8} />
+            Fancy Text
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3F4E6D] transition hover:bg-[#F5F7FB]"
+            aria-label="Close fancy text"
+          >
+            <X size={20} strokeWidth={1.8} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[235px_235px_minmax(0,1fr)]">
+          <div className="min-h-0 border-r border-[#d9dde8]">
+            <div className="px-8 py-4 text-[13px] font-semibold text-[#63708A]">Style</div>
+            <div className="h-full overflow-y-auto px-6 pb-6 editor-scroll">
+              <div className="space-y-2">
+                {FANCY_TEXT_STYLES.map((style) => {
+                  const styleFont = getFancyFontById(style.defaultFontId);
+                  const isSelected = selectedStyleId === style.id;
+
+                  return (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => setSelectedStyleId(style.id)}
+                      className={`w-full rounded-[8px] border px-4 py-3 text-left transition ${
+                        isSelected
+                          ? "border-[#46B9F2] bg-white shadow-[inset_0_0_0_1px_rgba(70,185,242,0.14)]"
+                          : "border-transparent bg-white hover:bg-[#F8FAFC]"
+                      }`}
+                    >
+                      <div
+                        style={{
+                          fontFamily: styleFont.fontFamily,
+                          fontWeight: styleFont.fontWeight || style.fontWeight,
+                          fontSize: "19px",
+                          lineHeight: 1.1,
+                          letterSpacing: `${Math.max(style.letterSpacing * 0.45, -0.5)}px`,
+                          color: style.palette[0],
+                          textTransform: style.textTransform,
+                          textShadow: buildFancyTextShadow({
+                            ...createToolbarDefaultEffectProps(),
+                            ...style.effect,
+                          }),
+                          WebkitTextStroke:
+                            (style.effect.strokeWidth ?? 0) > 0
+                              ? `${style.effect.strokeWidth}px ${style.effect.strokeColor || "#ffffff"}`
+                              : undefined,
+                        }}
+                      >
+                        {style.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="min-h-0 border-r border-[#d9dde8]">
+            <div className="px-8 py-4 text-[13px] font-semibold text-[#63708A]">Font</div>
+            <div className="h-full overflow-y-auto px-6 pb-6 editor-scroll">
+              <div className="space-y-2">
+                {FANCY_TEXT_FONTS.map((font) => {
+                  const isSelected = selectedFontId === font.id;
+
+                  return (
+                    <button
+                      key={font.id}
+                      type="button"
+                      onClick={() => setSelectedFontId(font.id)}
+                      className={`w-full rounded-[8px] border px-4 py-3 text-left transition ${
+                        isSelected
+                          ? "border-[#46B9F2] bg-white shadow-[inset_0_0_0_1px_rgba(70,185,242,0.14)]"
+                          : "border-transparent bg-white hover:bg-[#F8FAFC]"
+                      }`}
+                    >
+                      <span
+                        style={{
+                          fontFamily: font.fontFamily,
+                          fontWeight: font.fontWeight || selectedStyle.fontWeight,
+                          fontSize: "20px",
+                          color: "#4A4A4A",
+                        }}
+                      >
+                        {font.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-[#E5E9F0] bg-[#FBFCFE] px-8 py-10">
+              <div className="flex min-h-[110px] items-center justify-center overflow-hidden rounded-[4px] bg-white px-6 py-4">
+                {selectedTextShape === "straight" ? (
+                  <div style={previewStyle}>{draftText.trim() || "add your text"}</div>
+                ) : (
+                  <svg width="100%" height="160" viewBox="0 0 420 160" style={{ overflow: "hidden" }}>
+                    {gradientBackground ? (
+                      <defs>
+                        <linearGradient id="fancy-preview-gradient" x1="0%" y1="50%" x2="100%" y2="50%">
+                          {gradientColors.map((color, index, colors) => (
+                            <stop
+                              key={`${color}-${index}`}
+                              offset={`${colors.length === 1 ? 0 : (index / (colors.length - 1)) * 100}%`}
+                              stopColor={color}
+                            />
+                          ))}
+                        </linearGradient>
+                      </defs>
+                    ) : null}
+                    <path id="fancy-preview-path" d={buildFancyTextPath(selectedTextShape, shapeAmount, 420, 160)} fill="none" />
+                    <text
+                      fontSize={previewShapeFontSize}
+                      fontFamily={selectedFont.fontFamily}
+                      fontWeight={selectedFont.fontWeight || selectedStyle.fontWeight}
+                      letterSpacing={selectedStyle.letterSpacing}
+                      fill={gradientBackground ? "url(#fancy-preview-gradient)" : primaryGradientColor}
+                      stroke={(mergedEffect.strokeWidth ?? 0) > 0 ? mergedEffect.strokeColor : undefined}
+                      strokeWidth={mergedEffect.strokeWidth ?? 0}
+                      paintOrder="stroke fill"
+                      style={{ filter: mergedEffect.preset === "neon-glow" ? `drop-shadow(0 0 ${Math.max(8, mergedEffect.glowIntensity)}px ${mergedEffect.glowColor})` : undefined }}
+                    >
+                      <textPath
+                        href="#fancy-preview-path"
+                        startOffset="50%"
+                        textAnchor="middle"
+                        textLength={previewShapePathLength}
+                        lengthAdjust="spacingAndGlyphs"
+                      >
+                        {previewShapeTextValue}
+                      </textPath>
+                    </text>
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 editor-scroll">
+              <div className="space-y-6 pb-2">
+                <input
+                  type="text"
+                  value={draftText}
+                  onChange={(event) => setDraftText(event.target.value)}
+                  placeholder="add your text"
+                  className="h-12 w-full rounded-[4px] border border-[#CCD3DF] bg-white px-4 text-[14px] text-[#3F4E6D] outline-none transition focus:border-[#46B9F2]"
+                />
+
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[14px] text-[#718096]">Gradient Colors</span>
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    {customPalette.map((color, index) => {
+                      const isSelected = selectedColorIndex === index;
+
+                      return (
+                        <button
+                          key={`${selectedStyle.id}-${index}`}
+                          type="button"
+                          onClick={() => setSelectedColorIndex(index)}
+                          className={`flex h-11 w-11 items-center justify-center rounded-[4px] border transition ${
+                            isSelected ? "border-[#46B9F2]" : "border-[#D9E2EC]"
+                          }`}
+                          style={{ backgroundColor: color }}
+                          aria-label={`Select editable color ${index + 1}`}
+                        >
+                          {isSelected ? <Check size={16} className="text-white" strokeWidth={2.3} /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-[8px] border border-[#E6ECF2] bg-[#FAFBFD] px-4 py-4">
+                  <div
+                    className="mb-4 h-3 w-full rounded-full border border-[#D9E2EC]"
+                    style={{ backgroundImage: buildFancyGradient(gradientColors) || primaryGradientColor }}
+                  />
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <span className="text-[13px] font-semibold text-[#53627C]">Edit gradient stop</span>
+                    <span className="text-[12px] text-[#7B8798]">Stop {selectedColorIndex + 1}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label
+                      className="relative flex h-11 w-11 cursor-pointer overflow-hidden rounded-[8px] border border-[#CCD3DF] bg-white"
+                      style={{ backgroundColor: activeStopColor }}
+                      aria-label="Open color picker"
+                    >
+                      <input
+                        type="color"
+                        value={activeStopColor}
+                        onChange={(event) => {
+                          const nextColor = normalizeFancyHexColor(event.target.value, activeStopColor);
+                          updatePaletteColor(selectedColorIndex, nextColor);
+                          setDraftColorValue(nextColor);
+                        }}
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      value={draftColorValue}
+                      onChange={(event) => setDraftColorValue(event.target.value.toUpperCase())}
+                      onBlur={commitDraftColorValue}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitDraftColorValue();
+                        }
+                      }}
+                      className="h-11 min-w-[140px] flex-1 rounded-[6px] border border-[#CCD3DF] bg-white px-4 text-[14px] uppercase tracking-[0.04em] text-[#4A5568] outline-none transition focus:border-[#46B9F2]"
+                      aria-label="Edit selected hex color"
+                    />
+                    <button
+                      type="button"
+                      onClick={resetSelectedPaletteColor}
+                      className="inline-flex h-11 items-center justify-center rounded-[6px] border border-[#CCD3DF] bg-white px-4 text-[13px] font-medium text-[#53627C] transition hover:border-[#B9C4D4] hover:bg-[#F5F7FB]"
+                    >
+                      Reset stop
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[14px] text-[#718096]">Text Shape</span>
+                  <div className="relative w-[196px] max-w-full">
+                    <select
+                      value={selectedTextShape}
+                      onChange={(event) => setSelectedTextShape(event.target.value as NonNullable<CanvasElement["textShape"]>)}
+                      className="h-11 w-full appearance-none rounded-[6px] border border-[#CCD3DF] bg-white px-4 pr-10 text-[14px] text-[#4A5568] outline-none transition focus:border-[#46B9F2]"
+                    >
+                      {FANCY_TEXT_SHAPES.map((shape) => (
+                        <option key={shape.value} value={shape.value}>
+                          {shape.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#7C8798]">⌄</span>
+                  </div>
+                </div>
+
+                {selectedTextShape !== "straight" ? (
+                  <div className="rounded-[8px] border border-[#E6ECF2] bg-[#FAFBFD] px-4 py-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="text-[14px] text-[#718096]">Curve Amount</span>
+                      <div className="flex h-10 items-center overflow-hidden rounded-[6px] border border-[#D7DCE3] bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setShapeAmount((value) => Math.max(0, value - 5))}
+                          className="flex h-10 w-10 items-center justify-center text-[#6B7280] transition hover:bg-[#F5F7FB]"
+                        >
+                          -
+                        </button>
+                        <div className="flex h-10 min-w-[54px] items-center justify-center border-x border-[#D7DCE3] px-3 text-[13px] font-medium text-[#4A5568]">
+                          {shapeAmount}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShapeAmount((value) => Math.min(100, value + 5))}
+                          className="flex h-10 w-10 items-center justify-center text-[#6B7280] transition hover:bg-[#F5F7FB]"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={shapeAmount}
+                      onChange={(event) => setShapeAmount(Number(event.target.value))}
+                      className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-[#D7DEE8] accent-[#49BAEA]"
+                    />
+                  </div>
+                ) : null}
+
+                <div className="rounded-[8px] border border-[#E6ECF2] bg-[#FAFBFD] px-4 py-4">
+                  <div className="text-[13px] font-semibold text-[#53627C]">{selectedStyle.label}</div>
+                  <div className="mt-1 text-[13px] text-[#7B8798]">{selectedStyle.description}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="shrink-0 flex items-center justify-end border-t border-[#d9dde8] px-8 py-5">
+              <button
+                type="button"
+                onClick={handleAddFancyText}
+                className="inline-flex h-11 items-center justify-center rounded-[10px] bg-[#49BAEA] px-6 text-[16px] font-semibold text-white transition hover:bg-[#35a9db]"
+              >
+                Add fancy text
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ---------- templates ---------- */
 
 const isTemplateRecord = (value: unknown): value is TemplateRecord => {
@@ -544,6 +1362,8 @@ const TemplatesPanel: React.FC<{
 const TextPanel: React.FC<{
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
 }> = ({ onAddElement }) => {
+  const [isFancyComposerOpen, setIsFancyComposerOpen] = useState(false);
+
   const addText = (
     preset: "plain" | "fancy" | "subtitle" | "slideshow" | "menu"
   ) => {
@@ -609,42 +1429,51 @@ const TextPanel: React.FC<{
   };
 
   return (
-    <PanelCard className="overflow-hidden">
-      <div className="space-y-1">
-        <ToolListItem
-          icon={<Type size={28} strokeWidth={1.6} />}
-          title="Plain Text"
-          subtitle="Add simple text"
-          onClick={() => addText("plain")}
+    <>
+      <PanelCard className="overflow-hidden">
+        <div className="space-y-1">
+          <ToolListItem
+            icon={<Type size={28} strokeWidth={1.6} />}
+            title="Plain Text"
+            subtitle="Add simple text"
+            onClick={() => addText("plain")}
+          />
+          <ToolListItem
+            icon={<Sparkles size={28} strokeWidth={1.6} />}
+            title="Fancy Text"
+            subtitle="Add creative font styles"
+            active
+            onClick={() => setIsFancyComposerOpen(true)}
+          />
+          <ToolListItem
+            icon={<Captions size={28} strokeWidth={1.6} />}
+            title="Subtitles"
+            subtitle="Add subtitles to your design"
+            onClick={() => addText("subtitle")}
+          />
+          <div className="mx-4 border-t border-[#e5e7eb]" />
+          {/* <ToolListItem
+            icon={<Clapperboard size={28} strokeWidth={1.6} />}
+            title="Slideshow"
+            subtitle="Add a text slideshow"
+            onClick={() => addText("slideshow")}
+          />
+          <ToolListItem
+            icon={<List size={28} strokeWidth={1.6} />}
+            title="Menu"
+            subtitle="Create your own menu"
+            onClick={() => addText("menu")}
+          /> */}
+        </div>
+      </PanelCard>
+
+      {isFancyComposerOpen ? (
+        <FancyTextComposer
+          onClose={() => setIsFancyComposerOpen(false)}
+          onAddElement={onAddElement}
         />
-        <ToolListItem
-          icon={<Sparkles size={28} strokeWidth={1.6} />}
-          title="Fancy Text"
-          subtitle="Add creative font styles"
-          active
-          onClick={() => addText("fancy")}
-        />
-        <ToolListItem
-          icon={<Captions size={28} strokeWidth={1.6} />}
-          title="Subtitles"
-          subtitle="Add subtitles to your design"
-          onClick={() => addText("subtitle")}
-        />
-        <div className="mx-4 border-t border-[#e5e7eb]" />
-        {/* <ToolListItem
-          icon={<Clapperboard size={28} strokeWidth={1.6} />}
-          title="Slideshow"
-          subtitle="Add a text slideshow"
-          onClick={() => addText("slideshow")}
-        />
-        <ToolListItem
-          icon={<List size={28} strokeWidth={1.6} />}
-          title="Menu"
-          subtitle="Create your own menu"
-          onClick={() => addText("menu")}
-        /> */}
-      </div>
-    </PanelCard>
+      ) : null}
+    </>
   );
 };
 

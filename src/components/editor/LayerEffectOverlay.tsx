@@ -54,6 +54,173 @@ const getTextAlignment = (align?: CanvasElement["textAlign"]) => {
   return "flex-start";
 };
 
+const getTextShapeAmount = (element: CanvasElement) =>
+  clamp(element.textShapeAmount ?? 60, 0, 100);
+
+const getTextGradientColors = (element: CanvasElement) =>
+  (element.textGradientColors || []).filter((color) => typeof color === "string" && color.length > 0);
+
+const getTextGradientBackground = (element: CanvasElement) => {
+  const gradientColors = getTextGradientColors(element);
+  if (gradientColors.length < 2) {
+    return undefined;
+  }
+
+  const step = gradientColors.length === 1 ? 100 : 100 / (gradientColors.length - 1);
+  const angle = element.textGradientAngle ?? 90;
+  const stops = gradientColors.map((color, index) => `${color} ${Math.round(index * step)}%`);
+  return `linear-gradient(${angle}deg, ${stops.join(", ")})`;
+};
+
+const buildTextEffectFilter = (
+  element: CanvasElement,
+  pulseProgress: number,
+  isMobile: boolean,
+) => {
+  const effect = element.effectProps;
+  if (!effect || element.type !== "text") return undefined;
+
+  const factor = getMobileIntensityScale(isMobile);
+  const filters: string[] = [];
+
+  if (effect.preset === "neon-glow") {
+    const glow = Math.max(4, effect.glowIntensity * factor);
+    filters.push(`drop-shadow(0 0 ${glow}px ${effect.glowColor})`);
+    filters.push(`drop-shadow(0 0 ${glow * 0.55}px ${effect.glowColor})`);
+  }
+
+  const hasShadow =
+    effect.preset === "drop-shadow" ||
+    effect.shadowBlur > 0 ||
+    Math.abs(effect.shadowOffsetX) > 0 ||
+    Math.abs(effect.shadowOffsetY) > 0 ||
+    effect.shadowOpacity > 0;
+
+  if (hasShadow) {
+    const blur = Math.max(2, effect.shadowBlur * factor);
+    const color = hexToRgba(effect.shadowColor, effect.shadowOpacity);
+    filters.push(
+      `drop-shadow(${effect.shadowOffsetX * factor}px ${effect.shadowOffsetY * factor}px ${blur}px ${color})`,
+    );
+  }
+
+  if (effect.preset === "pulse") {
+    const pulseGlow = Math.max(4, effect.glowIntensity * factor * (0.75 + pulseProgress * 0.55));
+    filters.push(`drop-shadow(0 0 ${pulseGlow}px ${effect.glowColor})`);
+  }
+
+  return filters.length > 0 ? filters.join(" ") : undefined;
+};
+
+const buildTextShapePath = (element: CanvasElement, width: number, height: number) => {
+  const shape = element.textShape || "straight";
+  const inset = Math.min(24, width * 0.06);
+  const usableWidth = Math.max(width - inset * 2, 20);
+  const baseY = height * 0.58;
+  const amountRatio = getTextShapeAmount(element) / 100;
+  const amplitude = Math.max(10, amountRatio * height * 0.28);
+  const shouldUseCurveArc = shape === "curve-up" || shape === "curve-down";
+
+  if (shouldUseCurveArc) {
+    const radius = Math.max(24, Math.min(usableWidth / 2, height * 0.34));
+    const centerX = inset + usableWidth / 2;
+    const centerY = height / 2;
+    const fullCircleThreshold = 0.9995;
+    const isFullCircle = amountRatio >= fullCircleThreshold;
+
+    if (isFullCircle) {
+      const startY = shape === "curve-up" ? centerY + radius : centerY - radius;
+      const verticalDelta = shape === "curve-up" ? -radius * 2 : radius * 2;
+      return `M ${centerX} ${startY} a ${radius} ${radius} 0 1 1 0 ${verticalDelta} a ${radius} ${radius} 0 1 1 0 ${-verticalDelta}`;
+    }
+
+    const sweepDeg = 110 + amountRatio * 248;
+    const centerAngleDeg = shape === "curve-up" ? -90 : 90;
+    const startAngleDeg = centerAngleDeg - sweepDeg / 2;
+    const endAngleDeg = centerAngleDeg + sweepDeg / 2;
+    const startAngleRad = (startAngleDeg * Math.PI) / 180;
+    const endAngleRad = (endAngleDeg * Math.PI) / 180;
+    const startX = centerX + radius * Math.cos(startAngleRad);
+    const startY = centerY + radius * Math.sin(startAngleRad);
+    const endX = centerX + radius * Math.cos(endAngleRad);
+    const endY = centerY + radius * Math.sin(endAngleRad);
+    const largeArcFlag = sweepDeg > 180 ? 1 : 0;
+
+    return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
+  }
+
+  switch (shape) {
+    case "wave":
+      return `M ${inset} ${baseY} C ${inset + usableWidth * 0.18} ${baseY - amplitude}, ${inset + usableWidth * 0.32} ${baseY - amplitude}, ${inset + usableWidth * 0.5} ${baseY} C ${inset + usableWidth * 0.68} ${baseY + amplitude}, ${inset + usableWidth * 0.82} ${baseY + amplitude}, ${width - inset} ${baseY}`;
+    case "wedge-left":
+      return `M ${inset} ${baseY - amplitude * 0.45} L ${width - inset} ${baseY + amplitude * 0.28}`;
+    default:
+      return `M ${inset} ${baseY} L ${width - inset} ${baseY}`;
+  }
+};
+
+const getShapeTextValue = (element: CanvasElement) => {
+  const baseText = element.content || "";
+  const flattened = baseText.replace(/\r\n/g, "\n").split("\n").join(" ");
+  return element.textTransform === "uppercase" ? flattened.toUpperCase() : flattened;
+};
+
+const getTextShapePathLength = (element: CanvasElement, width: number, height: number) => {
+  const shape = element.textShape || "straight";
+  const inset = Math.min(24, width * 0.06);
+  const usableWidth = Math.max(width - inset * 2, 20);
+  const amountRatio = getTextShapeAmount(element) / 100;
+  const amplitude = Math.max(10, amountRatio * height * 0.28);
+  const shouldUseCurveArc = shape === "curve-up" || shape === "curve-down";
+
+  if (shouldUseCurveArc) {
+    const radius = Math.max(24, Math.min(usableWidth / 2, height * 0.34));
+    const fullCircleThreshold = 0.9995;
+    const isFullCircle = amountRatio >= fullCircleThreshold;
+    const sweepDeg = isFullCircle ? 360 : 110 + amountRatio * 248;
+    const sweepRadians = (Math.min(sweepDeg, 360) * Math.PI) / 180;
+    const arcLength = radius * sweepRadians;
+    const circleBlend = Math.max(0, Math.min(1, (amountRatio - 0.85) / 0.15));
+    const displayRatio = 0.94 - circleBlend * 0.22;
+    return arcLength * displayRatio;
+  }
+
+  switch (shape) {
+    case "wave":
+      return usableWidth + amplitude * 1.45;
+    case "wedge-left":
+      return Math.hypot(usableWidth, amplitude * 0.73);
+    default:
+      return usableWidth;
+  }
+};
+
+const getFittedTextShapeFontSize = (element: CanvasElement, width: number, height: number, scale: number) => {
+  const baseFontSize = (element.fontSize || 24) * scale;
+  const text = getShapeTextValue(element).trim();
+
+  if (!text) {
+    return baseFontSize;
+  }
+
+  const availableLength = getTextShapePathLength(element, width, height);
+  const letterSpacing = (element.letterSpacing || 0) * scale;
+  const letters = text.replace(/\s/g, "").length;
+  const spaces = text.length - letters;
+  const gaps = Math.max(0, text.length - 1);
+  const estimatedLength =
+    letters * baseFontSize * 0.64 +
+    spaces * baseFontSize * 0.28 +
+    gaps * Math.max(letterSpacing, baseFontSize * 0.04);
+
+  if (estimatedLength <= 0) {
+    return baseFontSize;
+  }
+
+  const fitScale = Math.min(1, (availableLength * 0.94) / estimatedLength);
+  return Math.max(16, baseFontSize * fitScale);
+};
+
 const mapAdjustmentToPercent = (value: number | undefined) => {
   const normalized = value ?? 50;
   return clamp(normalized * 2, 0, 200);
@@ -433,11 +600,63 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
                         );
                       })}
                     </div>
+                  ) : element.textShape && element.textShape !== "straight" ? (
+                    <svg
+                      width={baseWidth}
+                      height={baseHeight}
+                      viewBox={`0 0 ${baseWidth} ${baseHeight}`}
+                      style={{ overflow: "hidden" }}
+                    >
+                      {getTextGradientColors(element).length > 1 ? (
+                        <defs>
+                          <linearGradient id={`text-gradient-${element.id}`} x1="0%" y1="50%" x2="100%" y2="50%">
+                            {getTextGradientColors(element).map((color, index, colors) => (
+                              <stop
+                                key={`${color}-${index}`}
+                                offset={`${colors.length === 1 ? 0 : (index / (colors.length - 1)) * 100}%`}
+                                stopColor={color}
+                              />
+                            ))}
+                          </linearGradient>
+                        </defs>
+                      ) : null}
+                      <path id={`text-shape-${element.id}`} d={buildTextShapePath(element, baseWidth, baseHeight)} fill="none" />
+                      <text
+                        fontSize={getFittedTextShapeFontSize(element, baseWidth, baseHeight, scale)}
+                        fontFamily={element.fontFamily || "sans-serif"}
+                        fontWeight={element.fontWeight || "normal"}
+                        fontStyle={getTextFontStyle(element)}
+                        letterSpacing={(element.letterSpacing || 0) * scale}
+                        fill={getTextGradientColors(element).length > 1 ? `url(#text-gradient-${element.id})` : element.color || "#000000"}
+                        stroke={(effect.strokeWidth ?? 0) > 0 ? effect.strokeColor : undefined}
+                        strokeWidth={(effect.strokeWidth ?? 0) * getMobileIntensityScale(isMobile)}
+                        paintOrder="stroke fill"
+                        style={{ filter: buildTextEffectFilter(element, pulseProgress, isMobile) }}
+                      >
+                        <textPath
+                          href={`#text-shape-${element.id}`}
+                          startOffset="50%"
+                          textAnchor="middle"
+                          textLength={getTextShapePathLength(element, baseWidth, baseHeight)}
+                          lengthAdjust="spacingAndGlyphs"
+                        >
+                          {getShapeTextValue(element) || " "}
+                        </textPath>
+                      </text>
+                    </svg>
                   ) : (
                     <div
                       style={{
                         width: "100%",
                         minHeight: baseHeight,
+                        display: "block",
+                        color: getTextGradientColors(element).length > 1 ? "transparent" : undefined,
+                        backgroundImage: getTextGradientBackground(element),
+                        backgroundSize: getTextGradientColors(element).length > 1 ? "100% 100%" : undefined,
+                        backgroundRepeat: getTextGradientColors(element).length > 1 ? "no-repeat" : undefined,
+                        WebkitBackgroundClip: getTextGradientColors(element).length > 1 ? "text" : undefined,
+                        backgroundClip: getTextGradientColors(element).length > 1 ? "text" : undefined,
+                        WebkitTextFillColor: getTextGradientColors(element).length > 1 ? "transparent" : undefined,
                       }}
                     >
                       {element.content || ""}

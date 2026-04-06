@@ -124,6 +124,7 @@ export interface LayerEffectProps {
 export interface CanvasElement {
   id: string;
   role?: "design-title";
+  disableTextEditing?: boolean;
   type: "text" | "image" | "shape" | "video" | "table";
   x: number;
   y: number;
@@ -154,6 +155,10 @@ export interface CanvasElement {
   textVerticalAlign?: "top" | "middle" | "bottom";
   textDecoration?: "none" | "underline";
   textTransform?: "none" | "uppercase";
+  textGradientColors?: string[];
+  textGradientAngle?: number;
+  textShape?: "straight" | "curve-up" | "curve-down" | "wave" | "wedge-left";
+  textShapeAmount?: number;
   linkUrl?: string;
   listStyle?: "none" | "bulleted" | "numbered";
   listPosition?: "outside" | "inside";
@@ -1228,7 +1233,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       if (!newElementId) return;
 
       setSelectedLayerId(newElementId);
-      if (element.type === "text") {
+      if (element.type === "text" && !element.disableTextEditing) {
         requestTextEdit(newElementId);
       } else {
         clearTextEditRequest();

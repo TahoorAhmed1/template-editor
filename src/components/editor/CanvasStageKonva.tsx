@@ -1779,6 +1779,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
         (candidate) => candidate.id === elementId && candidate.type === "text",
       );
       if (!element) return false;
+      if (element.disableTextEditing) return false;
 
       const node = shapeRefs.current.get(elementId);
       if (!(node instanceof Konva.Text)) return false;
@@ -2765,6 +2766,15 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       return;
     }
 
+    if (targetElement.disableTextEditing) {
+      if (requestedTextEditId === resolvedAutoEditElementId) {
+        consumeTextEditRequest(textEditRequestKey);
+      } else {
+        onAutoEditHandled?.(resolvedAutoEditElementId);
+      }
+      return;
+    }
+
     if (!startInlineEditingByElementId(resolvedAutoEditElementId)) return;
 
     if (requestedTextEditId === resolvedAutoEditElementId) {
@@ -3605,19 +3615,26 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
     if (renderable.type === "text") {
       const effect = renderable.effectProps;
       const fontSize = renderable.fontSize || 24;
+      const useOverlayTextBounds = useDomOverlay;
       const singleLine = !textContent.includes("\n");
       const intrinsicWidth = singleLine
         ? measureSingleLineTextWidth(renderable, textContent || " ", fontSize)
         : renderable.width;
-      const effectiveWidth = singleLine
-        ? Math.max(24, intrinsicWidth + 8, renderable.width || 0)
-        : renderable.width;
-      const measured = measureTextBox(
-        renderable,
-        effectiveWidth,
-        fontSize,
-      );
-      const textNodeHeight = Math.max(renderable.height || 0, measured.height);
+      const effectiveWidth = useOverlayTextBounds
+        ? Math.max(24, renderable.width || intrinsicWidth + 8)
+        : singleLine
+          ? Math.max(24, intrinsicWidth + 8, renderable.width || 0)
+          : renderable.width;
+      const measured = useOverlayTextBounds
+        ? { width: effectiveWidth, height: Math.max(1, renderable.height || 0) }
+        : measureTextBox(
+            renderable,
+            effectiveWidth,
+            fontSize,
+          );
+      const textNodeHeight = useOverlayTextBounds
+        ? Math.max(1, renderable.height || 0)
+        : Math.max(renderable.height || 0, measured.height);
       const usesGlow = effect?.preset === "neon-glow" || effect?.preset === "pulse";
       const usesShadow = usesGlow || effect?.preset === "drop-shadow" || (effect?.shadowBlur ?? 0) > 0;
       const shadowColor = usesGlow
