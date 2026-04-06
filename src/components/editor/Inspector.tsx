@@ -3,7 +3,7 @@ import {
   Trash2, Copy, ArrowUp, ArrowDown, ChevronsUp, ChevronsDown,
   ArrowLeft, ChevronDown, ChevronRight, CircleOff, Pipette, Play, Plus, Search, Shuffle, Sparkles,
 } from "lucide-react";
-import type { CanvasElement, CanvasSizePreset, EditorMode, DrawSettings, ActiveTool } from "./EditorShell";
+import type { CanvasElement, CanvasBackgroundValue, CanvasSizePreset, EditorMode, DrawSettings, ActiveTool } from "./EditorShell";
 import { buildBackgroundValue, clamp, hexToHsv, hsvToHex, normalizeHexColor, parseBackgroundValue, type BackgroundDraft, type BackgroundEditorType } from "./backgroundUtils";
 import { DEFAULT_LINEAR_GRADIENT, DEFAULT_RADIAL_GRADIENT, DESIGN_DEFAULT_PRESET_COLORS, DESIGN_HISTORY_COLORS, DESIGN_STYLE_FILTERS, DESIGN_STYLE_LIBRARY, DESIGN_STYLE_RECENTS, DESIGN_STYLE_SWATCHES, getCanvasSizePresets } from "./designPanelConfig";
 import { DrawFlyout } from "./GlobalSidebarFlyouts";
@@ -20,8 +20,8 @@ interface InspectorProps {
   onStartTextEditing?: (id: string) => void;
   canvasSize: CanvasSizePreset;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
-  canvasBackground: string;
-  onBackgroundChange: (bg: string) => void;
+  canvasBackground: CanvasBackgroundValue;
+onBackgroundChange: (bg: CanvasBackgroundValue) => void;
   designTitle: string;
   onDesignTitleChange: (title: string) => void;
   gridEnabled: boolean;
@@ -141,8 +141,8 @@ type DesignInspectorSection = "size" | "styles" | "background" | "animation" | "
 interface DesignInspectorProps {
   canvasSize: CanvasSizePreset;
   onCanvasSizeChange: (preset: CanvasSizePreset) => void;
-  canvasBackground: string;
-  onBackgroundChange: (bg: string) => void;
+  canvasBackground: CanvasBackgroundValue;
+onBackgroundChange: (bg: CanvasBackgroundValue) => void;
   designTitle: string;
   onDesignTitleChange: (title: string) => void;
   gridEnabled: boolean;
@@ -168,6 +168,43 @@ const createGradientDraft = (kind: BackgroundEditorType): BackgroundDraft => ({
   angleDeg: 135,
 });
 
+const backgroundValueToString = (background: CanvasBackgroundValue): string => {
+  if (typeof background === "string") {
+    return background;
+  }
+
+  if (background.type === "solid") {
+    return background.color;
+  }
+
+  if (background.type === "linear") {
+    return `linear-gradient(${background.angleDeg}deg, ${background.colors[0]} 0%, ${background.colors[1]} 100%)`;
+  }
+
+  if (background.type === "radial") {
+    return `radial-gradient(circle, ${background.colors[0]} 0%, ${background.colors[1]} 100%)`;
+  }
+
+  return "#FFFFFF";
+};
+
+
+const getImageBackgroundValue = (background: CanvasBackgroundValue) => {
+  if (typeof background === "string") {
+    return null;
+  }
+
+  if (background.type !== "image" || typeof background.src !== "string") {
+    return null;
+  }
+
+  return {
+    ...background,
+    fit: background.fit ?? "cover",
+    opacity: typeof background.opacity === "number" ? background.opacity : 1,
+  };
+};
+
 export const DesignInspector: React.FC<DesignInspectorProps> = ({
   canvasSize,
   onCanvasSizeChange,
@@ -187,7 +224,19 @@ export const DesignInspector: React.FC<DesignInspectorProps> = ({
   visibleSections,
 }) => {
   const [animationPhase, setAnimationPhase] = React.useState<"start" | "end">("start");
-  const [backgroundDraft, setBackgroundDraft] = React.useState<BackgroundDraft>(() => parseBackgroundValue(canvasBackground));
+  const imageBackgroundInputRef = React.useRef<HTMLInputElement>(null);
+  const imageBackground = React.useMemo(
+    () => getImageBackgroundValue(canvasBackground),
+    [canvasBackground],
+  );
+  const backgroundStringValue = React.useMemo(
+    () => backgroundValueToString(canvasBackground),
+    [canvasBackground],
+  );
+
+  const [backgroundDraft, setBackgroundDraft] = React.useState<BackgroundDraft>(() =>
+    parseBackgroundValue(backgroundStringValue),
+  );
   const backgroundDraftRef = React.useRef(backgroundDraft);
   const [gridSize, setGridSize] = React.useState(25);
   const [showStylesLibrary, setShowStylesLibrary] = React.useState(false);
@@ -196,10 +245,10 @@ export const DesignInspector: React.FC<DesignInspectorProps> = ({
   const [selectedStylePalette, setSelectedStylePalette] = React.useState<string[]>([...DESIGN_STYLE_SWATCHES]);
 
   React.useEffect(() => {
-    const parsed = parseBackgroundValue(canvasBackground);
-    backgroundDraftRef.current = parsed;
-    setBackgroundDraft(parsed);
-  }, [canvasBackground]);
+  const parsed = parseBackgroundValue(backgroundStringValue);
+  backgroundDraftRef.current = parsed;
+  setBackgroundDraft(parsed);
+}, [backgroundStringValue]);
 
   React.useEffect(() => {
     backgroundDraftRef.current = backgroundDraft;
@@ -231,6 +280,44 @@ export const DesignInspector: React.FC<DesignInspectorProps> = ({
       onBackgroundChange(buildBackgroundValue(nextDraft));
     },
     [onBackgroundChange],
+  );
+
+
+  const updateImageBackground = React.useCallback(
+    (updates: Partial<{ fit: "cover" | "contain" | "stretch"; opacity: number }>) => {
+      if (!imageBackground) {
+        return;
+      }
+
+      onBackgroundChange({
+        ...imageBackground,
+        ...updates,
+      });
+    },
+    [imageBackground, onBackgroundChange],
+  );
+
+  const handleImageBackgroundUpload = React.useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file || !file.type.startsWith("image/")) {
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        onBackgroundChange({
+          type: "image",
+          src: dataUrl,
+          fit: imageBackground?.fit ?? "cover",
+          opacity: imageBackground?.opacity ?? 1,
+        });
+      };
+      reader.readAsDataURL(file);
+      event.currentTarget.value = "";
+    },
+    [imageBackground, onBackgroundChange],
   );
 
   const handleBackgroundModeChange = (modeValue: "solid" | "gradient") => {
@@ -367,32 +454,125 @@ export const DesignInspector: React.FC<DesignInspectorProps> = ({
 
           {show("background") ? (
             <div className="space-y-4 border-b border-[#E8ECF2] pb-4">
+              <input
+                ref={imageBackgroundInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageBackgroundUpload}
+              />
+
               <div className="flex items-center justify-between gap-4">
                 <span className="text-[13px] text-[#718096]">Background</span>
-                <div className="relative pr-5 text-[14px] text-[#4A5568]">
-                  <select
-                    value={currentBackgroundMode}
-                    onChange={(event) => handleBackgroundModeChange(event.target.value as "solid" | "gradient")}
-                    className="appearance-none bg-transparent pr-1 outline-none"
-                  >
-                    <option value="solid">Solid</option>
-                    <option value="gradient">Gradient</option>
-                  </select>
-                  <ChevronDown size={14} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#6B7280]" />
-                </div>
+                {imageBackground ? (
+                  <span className="rounded-full bg-[#EEF2FF] px-3 py-1 text-[12px] font-medium text-[#5B63D3]">
+                    Image
+                  </span>
+                ) : (
+                  <div className="relative pr-5 text-[14px] text-[#4A5568]">
+                    <select
+                      value={currentBackgroundMode}
+                      onChange={(event) => handleBackgroundModeChange(event.target.value as "solid" | "gradient")}
+                      className="appearance-none bg-transparent pr-1 outline-none"
+                    >
+                      <option value="solid">Solid</option>
+                      <option value="gradient">Gradient</option>
+                    </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                  </div>
+                )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowColorEditor(true)}
-                className="flex w-full items-center justify-between rounded-[4px] border border-[#EEF1F5] bg-[#FAFBFD] px-4 py-3 text-left transition hover:bg-[#F6F9FC]"
-              >
-                <span className="text-[13px] text-[#718096]">Color</span>
-                <span
-                  className="h-10 w-12 rounded-[3px] border border-[#D7DCE3] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
-                  style={getBackgroundPreviewStyle(currentBackgroundPreview)}
-                />
-              </button>
+              {imageBackground ? (
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-[8px] border border-[#E2E8F0] bg-[#F8FAFC]">
+                    <div className="aspect-[4/3] w-full">
+                      <img src={imageBackground.src} alt="Canvas background" className="h-full w-full object-cover" />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => imageBackgroundInputRef.current?.click()}
+                      className="flex-1 rounded-[6px] border border-[#D7DCE3] bg-white px-3 py-2 text-[12px] font-medium text-[#4A5568] transition hover:bg-[#F8FAFC]"
+                    >
+                      Replace image
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onBackgroundChange("#FFFFFF")}
+                      className="rounded-[6px] border border-[#F2D1D1] bg-white px-3 py-2 text-[12px] font-medium text-[#C24141] transition hover:bg-[#FFF5F5]"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 rounded-[6px] border border-[#EEF1F5] bg-[#FAFBFD] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] text-[#718096]">Fit</span>
+                      <div className="flex gap-2">
+                        {(["cover", "contain", "stretch"] as const).map((fitMode) => (
+                          <button
+                            key={fitMode}
+                            type="button"
+                            onClick={() => updateImageBackground({ fit: fitMode })}
+                            className={`rounded-[6px] px-3 py-1.5 text-[12px] font-medium capitalize transition ${
+                              imageBackground.fit === fitMode
+                                ? "bg-[#E9E2FF] text-[#7650e3]"
+                                : "bg-white text-[#4A5568] border border-[#D7DCE3]"
+                            }`}
+                          >
+                            {fitMode}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-[6px] border border-[#EEF1F5] bg-[#FAFBFD] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] text-[#718096]">Opacity</span>
+                      <span className="text-[12px] font-medium text-[#4A5568]">
+                        {Math.round((imageBackground.opacity ?? 1) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round((imageBackground.opacity ?? 1) * 100)}
+                      onChange={(event) => updateImageBackground({ opacity: Number(event.target.value) / 100 })}
+                      className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[#D7DEE8] accent-[#7650e3]"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => imageBackgroundInputRef.current?.click()}
+                    className="flex w-full items-center justify-between rounded-[4px] border border-[#EEF1F5] bg-[#FAFBFD] px-4 py-3 text-left transition hover:bg-[#F6F9FC]"
+                  >
+                    <span className="text-[13px] text-[#718096]">Upload image background</span>
+                    <span className="rounded-full bg-white px-3 py-1 text-[12px] font-medium text-[#5B63D3] border border-[#D7DCE3]">
+                      Add
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowColorEditor(true)}
+                    className="flex w-full items-center justify-between rounded-[4px] border border-[#EEF1F5] bg-[#FAFBFD] px-4 py-3 text-left transition hover:bg-[#F6F9FC]"
+                  >
+                    <span className="text-[13px] text-[#718096]">Color</span>
+                    <span
+                      className="h-10 w-12 rounded-[3px] border border-[#D7DCE3] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+                      style={getBackgroundPreviewStyle(currentBackgroundPreview)}
+                    />
+                  </button>
+                </>
+              )}
             </div>
           ) : null}
 

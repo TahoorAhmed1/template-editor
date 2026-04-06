@@ -16,7 +16,12 @@ import {
   Video,
   Wand2,
 } from "lucide-react";
-import type { CanvasElement, DrawSettings, DrawToolKind } from "./EditorShell";
+import type {
+  CanvasBackgroundValue,
+  CanvasElement,
+  DrawSettings,
+  DrawToolKind,
+} from "./EditorShell";
 
 type DispatchDetail = {
   tool: string;
@@ -26,6 +31,17 @@ type DispatchDetail = {
 
 const dispatchEditorAction = (detail: DispatchDetail) => {
   window.dispatchEvent(new CustomEvent("editor:tool-action", { detail }));
+};
+
+const getImageBackgroundValue = (background: CanvasBackgroundValue) => {
+  if (typeof background === "string") return null;
+  if (background.type !== "image" || typeof background.src !== "string") return null;
+
+  return {
+    ...background,
+    fit: background.fit ?? "cover",
+    opacity: typeof background.opacity === "number" ? background.opacity : 1,
+  };
 };
 
 const CardOption: React.FC<{
@@ -90,12 +106,15 @@ const DrawBrushPreview: React.FC<{
 );
 
 export const BackgroundFlyout: React.FC<{
-  onBackgroundChange: (bg: string) => void;
+  onBackgroundChange: (bg: CanvasBackgroundValue) => void;
   onAddElement: (el: Omit<CanvasElement, "id">) => void;
-}> = ({ onBackgroundChange, onAddElement }) => {
+  canvasBackground: CanvasBackgroundValue;
+}> = ({ onBackgroundChange, canvasBackground }) => {
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const [backgroundUploads, setBackgroundUploads] = React.useState<Array<{ src: string }>>(
-    []
+  const [backgroundUploads, setBackgroundUploads] = React.useState<Array<{ src: string }>>([]);
+  const imageBackground = React.useMemo(
+    () => getImageBackgroundValue(canvasBackground),
+    [canvasBackground],
   );
 
   const handleBackgroundFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,56 +122,60 @@ export const BackgroundFlyout: React.FC<{
     if (!files) return;
 
     Array.from(files).forEach((file) => {
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          setBackgroundUploads((prev) => [{ src: dataUrl }, ...prev]);
+      if (!file.type.startsWith("image/")) return;
 
-          const img = new window.Image();
-          img.onload = () => {
-            // Add as a full-size background image element
-            onAddElement({
-              type: "image",
-              x: 0,
-              y: 0,
-              width: img.width,
-              height: img.height,
-              src: dataUrl,
-              zIndex: 0,
-            });
-            dispatchEditorAction({
-              tool: "background",
-              action: "upload",
-              payload: { background: dataUrl },
-            });
-          };
-          img.src = dataUrl;
-        };
-        reader.readAsDataURL(file);
-      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+
+        setBackgroundUploads((prev) =>
+          prev.some((upload) => upload.src === dataUrl) ? prev : [{ src: dataUrl }, ...prev],
+        );
+
+        onBackgroundChange({
+          type: "image",
+          src: dataUrl,
+          fit: imageBackground?.fit ?? "cover",
+          opacity: imageBackground?.opacity ?? 1,
+        });
+
+        dispatchEditorAction({
+          tool: "background",
+          action: imageBackground ? "replace" : "upload",
+          payload: { background: dataUrl },
+        });
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    e.currentTarget.value = "";
+  };
+
+  const updateImageBackground = (
+    updates: Partial<{ fit: "cover" | "contain" | "stretch"; opacity: number }>,
+  ) => {
+    if (!imageBackground) return;
+
+    onBackgroundChange({
+      ...imageBackground,
+      ...updates,
     });
   };
 
   const addBackgroundFromUpload = (src: string) => {
-    const img = new window.Image();
-    img.onload = () => {
-      onAddElement({
-        type: "image",
-        x: 0,
-        y: 0,
-        width: img.width,
-        height: img.height,
-        src: src,
-        zIndex: 0,
-      });
-      dispatchEditorAction({
-        tool: "background",
-        action: "upload-select",
-        payload: { background: src },
-      });
-    };
-    img.src = src;
+    onBackgroundChange({
+      type: "image",
+      src,
+      fit: imageBackground?.fit ?? "cover",
+      opacity: imageBackground?.opacity ?? 1,
+    });
+
+    dispatchEditorAction({
+      tool: "background",
+      action: "upload-select",
+      payload: { background: src },
+    });
   };
 
   return (
@@ -174,10 +197,74 @@ export const BackgroundFlyout: React.FC<{
           <Upload size={20} />
         </div>
         <div>
-          <div className="text-[15px] font-semibold text-[#4A5568]">Upload Background</div>
-          <div className="text-[13px] leading-snug text-[#718096]">Upload image as background</div>
+          <div className="text-[15px] font-semibold text-[#4A5568]">
+            {imageBackground ? "Replace Background" : "Upload Background"}
+          </div>
+          <div className="text-[13px] leading-snug text-[#718096]">
+            {imageBackground ? "Choose another image background" : "Upload image as background"}
+          </div>
         </div>
       </div>
+
+      {imageBackground ? (
+        <div className="space-y-4 rounded-2xl border border-[#e3e7ed] bg-white p-4">
+          <div className="overflow-hidden rounded-xl border border-[#e3e7ed] bg-[#f8fafc]">
+            <div className="aspect-[4/3] w-full">
+              <img src={imageBackground.src} alt="Current background" className="h-full w-full object-cover" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#8b84b3]">Fit</div>
+            <div className="grid grid-cols-3 gap-2">
+              {(["cover", "contain", "stretch"] as const).map((fitMode) => (
+                <button
+                  key={fitMode}
+                  type="button"
+                  onClick={() => updateImageBackground({ fit: fitMode })}
+                  className={`rounded-xl border px-3 py-2 text-[12px] font-medium capitalize transition ${
+                    imageBackground.fit === fitMode
+                      ? "border-[#c8b7ff] bg-[#f3efff] text-[#7650e3]"
+                      : "border-[#e3e7ed] bg-white text-[#4A5568] hover:bg-[#f8fbfd]"
+                  }`}
+                >
+                  {fitMode}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#8b84b3]">Opacity</div>
+              <div className="text-[12px] font-medium text-[#4A5568]">
+                {Math.round((imageBackground.opacity ?? 1) * 100)}%
+              </div>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round((imageBackground.opacity ?? 1) * 100)}
+              onChange={(event) =>
+                updateImageBackground({ opacity: Number(event.target.value) / 100 })
+              }
+              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-[#ece7ff] accent-[#7650e3]"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onBackgroundChange("#FFFFFF");
+              dispatchEditorAction({ tool: "background", action: "remove-image" });
+            }}
+            className="w-full rounded-xl border border-[#f1d2d2] px-3 py-2 text-[12px] font-semibold text-[#c24141] transition hover:bg-[#fff5f5]"
+          >
+            Remove image background
+          </button>
+        </div>
+      ) : null}
 
       {backgroundUploads.length > 0 && (
         <div className="border-t border-[#e3e7ed] pt-4">

@@ -63,6 +63,20 @@ export interface CanvasSizePreset {
   description?: string;
 }
 
+export type CanvasBackground =
+  | { type: "solid"; color: string }
+  | { type: "linear"; colors: [string, string]; angleDeg: number }
+  | { type: "radial"; colors: [string, string] }
+  | {
+      type: "image";
+      src: string;
+      fit?: "cover" | "contain" | "stretch";
+      opacity?: number;
+      blur?: number;
+    };
+
+export type CanvasBackgroundValue = string | CanvasBackground;
+
 export interface LayerAnimationState {
   opacity: number;
   x: number;
@@ -174,9 +188,56 @@ export interface CanvasElement {
   cellStyles?: { [key: string]: { backgroundColor?: string; color?: string; fontWeight?: string } };
 }
 
+const isCanvasBackgroundObject = (value: unknown): value is CanvasBackground => {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as Partial<CanvasBackground>;
+
+  if (candidate.type === "solid") {
+    return typeof candidate.color === "string";
+  }
+
+  if (candidate.type === "linear") {
+    return (
+      Array.isArray(candidate.colors) &&
+      candidate.colors.length === 2 &&
+      typeof candidate.colors[0] === "string" &&
+      typeof candidate.colors[1] === "string" &&
+      typeof candidate.angleDeg === "number"
+    );
+  }
+
+  if (candidate.type === "radial") {
+    return (
+      Array.isArray(candidate.colors) &&
+      candidate.colors.length === 2 &&
+      typeof candidate.colors[0] === "string" &&
+      typeof candidate.colors[1] === "string"
+    );
+  }
+
+  if (candidate.type === "image") {
+    return typeof candidate.src === "string";
+  }
+
+  return false;
+};
+
+const normalizeCanvasBackground = (value: unknown): CanvasBackgroundValue => {
+  if (typeof value === "string") {
+    return value || "#FFFFFF";
+  }
+
+  if (isCanvasBackgroundObject(value)) {
+    return value;
+  }
+
+  return "#FFFFFF";
+};
+
 interface HistoryEntry {
   elements: CanvasElement[];
-  canvasBackground: string;
+  canvasBackground: CanvasBackgroundValue;
 }
 
 let nextId = 1;
@@ -796,7 +857,7 @@ export const EditorShell: React.FC<EditorShellProps> = ({ mode, initialSize, onB
   const [restoredViewportState, setRestoredViewportState] = React.useState<TemplateViewportState | null>(null);
   const [viewportResetKey, setViewportResetKey] = React.useState(0);
   const [canvasSize, setCanvasSize] = React.useState<CanvasSizePreset>(safeInitialSize);
-  const [canvasBackground, setCanvasBackground] = React.useState("#FFFFFF");
+  const [canvasBackground, setCanvasBackground] = React.useState<CanvasBackgroundValue>("#FFFFFF");
   const [designTitle, setDesignTitle] = React.useState("");
   const [requestedMobileTab, setRequestedMobileTab] = React.useState<
     "add" | "styles" | "resize" | "background" | "title" | "layout" | null
@@ -842,24 +903,24 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   ]);
   const [elementPreviewById, setElementPreviewById] = React.useState<Record<string, Partial<CanvasElement>>>({});
   const [history, setHistory] = React.useState<HistoryEntry[]>([
-    {
-      elements: [],
-      canvasBackground: "#FFFFFF",
-    },
-  ]);
+  {
+    elements: [],
+    canvasBackground: "#FFFFFF",
+  },
+]);
   const [historyIndex, setHistoryIndex] = React.useState(0);
 
   const pushHistory = useCallback(
-    (newElements: CanvasElement[], newBg?: string) => {
-      const bg = newBg ?? canvasBackground;
-      setHistory((prev) => {
-        const trimmed = prev.slice(0, historyIndex + 1);
-        return [...trimmed, { elements: newElements, canvasBackground: bg }];
-      });
-      setHistoryIndex((prev) => prev + 1);
-    },
-    [historyIndex, canvasBackground]
-  );
+  (newElements: CanvasElement[], newBg?: CanvasBackgroundValue) => {
+    const bg = newBg ?? canvasBackground;
+    setHistory((prev) => {
+      const trimmed = prev.slice(0, historyIndex + 1);
+      return [...trimmed, { elements: newElements, canvasBackground: bg }];
+    });
+    setHistoryIndex((prev) => prev + 1);
+  },
+  [historyIndex, canvasBackground]
+);
 
   const undo = useCallback(() => {
     if (historyIndex > 0) {
@@ -1436,12 +1497,12 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
   );
 
   const handleBackgroundChange = useCallback(
-    (bg: string) => {
-      setCanvasBackground(bg);
-      pushHistory(elements, bg);
-    },
-    [elements, pushHistory]
-  );
+  (bg: CanvasBackgroundValue) => {
+    setCanvasBackground(bg);
+    pushHistory(elements, bg);
+  },
+  [elements, pushHistory]
+);
 
   const handleSelectElement = useCallback(
   (id: string | null) => {
@@ -1580,7 +1641,9 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
           .map((element) => clampLayerToCanvas(element, nextCanvasSize))
           .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
       );
-      const nextBackground = template.json.canvasBackground || "#FFFFFF";
+      const nextBackground = normalizeCanvasBackground(
+  template.json.canvasBackground ?? "#FFFFFF",
+);
 
       clearElementPreview();
       setSelectedLayerId(null);
@@ -1689,7 +1752,9 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
             }, [])
             .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0)),
         );
-        const nextBackground = resolvedDesign.json.canvasBackground || "#FFFFFF";
+        const nextBackground = normalizeCanvasBackground(
+  resolvedDesign.json.canvasBackground ?? "#FFFFFF",
+);
         const nextViewportState = resolvedDesign.json.viewportState ?? viewportState ?? null;
 
         clearElementPreview();
@@ -2202,6 +2267,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
       <div className="grid flex-1 min-h-0 grid-cols-1 overflow-hidden bg-[#eef1f5]">
   <div className="mobile-editor-stage-shell relative min-h-0">
         <CanvasStage
+        
           elements={layers}
           selectedElementIds={selectedElementIds}
           onSelectElement={handleSelectElement}
@@ -2356,6 +2422,7 @@ const [mobileLayerSheetOpen, setMobileLayerSheetOpen] = React.useState(false);
 
         <CanvasStage
           elements={layers}
+          
           selectedElementIds={selectedElementIds}
           onSelectElement={handleSelectElement}
           onStartTextEditing={startTextEditing}
