@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { CanvasElement, CanvasSizePreset, LayerEffectProps } from "./EditorShell";
 import { ArrangementControls, LockInPlaceControl, PositionSidebar } from "./PositionSidebar";
+import { MaskPickerDialog } from "./MaskPickerDialog";
 
 interface ImageAdjustmentSidebarProps {
   selectedImage: CanvasElement;
@@ -228,12 +229,14 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
   const [activePanel, setActivePanel] = React.useState<"main" | "position">("main");
   const [isAiProcessing, setIsAiProcessing] = React.useState(false);
   const [isMobileViewport, setIsMobileViewport] = React.useState(false);
+  const [isMaskDialogOpen, setIsMaskDialogOpen] = React.useState(false);
   const isLocked = Boolean(selectedImage.locked);
   const effect = normalizeEffectProps(selectedImage);
   const activePhase = selectedImage.animationProps?.activePhase ?? "end";
 
   React.useEffect(() => {
     setActivePanel("main");
+    setIsMaskDialogOpen(false);
   }, [selectedImage.id]);
 
   React.useEffect(() => {
@@ -307,6 +310,13 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
 
   return (
     <div className="bg-white px-3 pb-5 pt-2 text-[#1f2937]">
+      <MaskPickerDialog
+        open={isMaskDialogOpen}
+        onOpenChange={setIsMaskDialogOpen}
+        selectedImage={selectedImage}
+        onApply={updateImage}
+      />
+
       <input
         ref={fileInputRef}
         type="file"
@@ -419,9 +429,18 @@ export const ImageAdjustmentSidebar: React.FC<ImageAdjustmentSidebarProps> = ({
             <span>Replace</span>
           </button>
      
-          <button type="button" className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 hover:bg-[#f7f9fb]" onClick={() => updateImage({ maskShape: selectedImage.maskShape === "circle" ? "none" : "circle" })}>
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded-md px-1 py-1.5 ${selectedImage.maskShape && selectedImage.maskShape !== "none" ? "bg-[#f0f9ff] text-[#0369a1]" : "hover:bg-[#f7f9fb]"}`}
+            onClick={() => setIsMaskDialogOpen(true)}
+          >
             <Scissors size={14} className="text-[#6b7280]" />
             <span>Mask</span>
+            {selectedImage.maskShape && selectedImage.maskShape !== "none" ? (
+              <span className="ml-auto rounded-full bg-[#e0f2fe] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#0284c7]">
+                {selectedImage.maskShape}
+              </span>
+            ) : null}
           </button>
         </div>
       </Section>

@@ -31,6 +31,10 @@ export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
   const effect = element.effectProps;
 
   if (element.type === "image") {
+    const hasCustomImageMask =
+      (element.maskMode === "text" && Boolean(element.maskText?.trim())) ||
+      (element.maskMode === "freehand" && (element.maskFreehandPoints?.length ?? 0) >= 3) ||
+      Boolean(element.maskShape && element.maskShape !== "none");
     const hasImageAdjustments =
       (element.brightness ?? 50) !== 50 ||
       (element.contrast ?? 50) !== 50 ||
@@ -46,7 +50,9 @@ export const shouldUseDomEffectOverlay = (element: CanvasElement) => {
       Boolean(element.roundnessEnabled) ||
       (element.borderRadius ?? 0) > 0 ||
       (element.borderWidth ?? 0) > 0 ||
-      (element.maskShape && element.maskShape !== "none");
+      hasCustomImageMask ||
+      Boolean(element.maskColorPop) ||
+      Boolean(element.maskInvert);
 
     if (hasImageAdjustments) {
       return true;

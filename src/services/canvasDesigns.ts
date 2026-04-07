@@ -7,6 +7,7 @@ import type {
 import type {
   TemplateJson,
   TemplateRecord,
+  TemplateCanvasBackground,
   TemplateViewportState,
 } from "@/components/editor/templateTypes";
 
@@ -16,7 +17,7 @@ export interface CanvasDesignSnapshot {
   name: string;
   mode: EditorMode;
   canvasSize: CanvasSizePreset;
-  canvasBackground: string;
+  canvasBackground: TemplateCanvasBackground;
   elements: CanvasElement[];
   viewportState?: TemplateViewportState;
   thumbnailDataUrl?: string;

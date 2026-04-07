@@ -309,6 +309,214 @@ const getImageBorderRadius = (element: CanvasElement, scale: number) => {
   return `${(element.borderRadius || 0) * scale}px`;
 };
 
+const getMaskPositionValue = (value: number | undefined) => clamp(value ?? 50, 0, 100);
+
+const getMaskScaleValue = (
+  element: CanvasElement,
+  mode: ReturnType<typeof getActiveImageMaskMode>,
+) => {
+  const defaultScale = mode === "shape" ? 42 : 100;
+  return clamp(element.maskScale ?? defaultScale, 12, 160);
+};
+
+const getActiveImageMaskMode = (element: CanvasElement) => {
+  if (element.maskMode === "text" && element.maskText?.trim()) {
+    return "text" as const;
+  }
+
+  if (element.maskMode === "freehand" && (element.maskFreehandPoints?.length ?? 0) >= 3) {
+    return "freehand" as const;
+  }
+
+  if (element.maskShape && element.maskShape !== "none") {
+    return "shape" as const;
+  }
+
+  return "none" as const;
+};
+
+const joinCssFilters = (...filters: Array<string | undefined>) => {
+  const value = filters.filter((filter) => typeof filter === "string" && filter.trim().length > 0).join(" ");
+  return value || "none";
+};
+
+const buildMaskDataUrl = (svgMarkup: string) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+
+const buildShapeMaskImage = (element: CanvasElement) => {
+  if (!element.maskShape || element.maskShape === "none") {
+    return undefined;
+  }
+
+  let shapeMarkup = "";
+
+  if (element.maskShape === "circle") {
+    shapeMarkup = '<circle cx="50" cy="50" r="50" fill="white" />';
+  } else if (element.maskShape === "rounded") {
+    shapeMarkup = '<rect x="0" y="0" width="100" height="100" rx="18" ry="18" fill="white" />';
+  } else if (element.maskShape === "triangle") {
+    shapeMarkup = '<polygon points="50,0 100,100 0,100" fill="white" />';
+  } else if (element.maskShape === "star") {
+    shapeMarkup = '<polygon points="50,0 61,35 98,35 68,57 79,91 50,70 21,91 32,57 2,35 39,35" fill="white" />';
+  } else if (element.maskShape === "heart") {
+    shapeMarkup = '<path d="M 50 92 C 15 70 0 48 0 28 C 0 10 14 0 28 0 C 40 0 48 8 50 16 C 52 8 60 0 72 0 C 86 0 100 10 100 28 C 100 48 85 70 50 92 Z" fill="white" />';
+  } else if (element.maskShape === "half-circle") {
+    shapeMarkup = '<path d="M 0 50 L 100 50 A 50 50 0 0 1 0 50 Z" fill="white" />';
+  } else if (element.maskShape === "oval") {
+    shapeMarkup = '<ellipse cx="50" cy="50" rx="50" ry="35" fill="white" />';
+  } else if (element.maskShape === "right-triangle") {
+    shapeMarkup = '<polygon points="0,0 100,100 0,100" fill="white" />';
+  } else if (element.maskShape === "parallelogram") {
+    shapeMarkup = '<polygon points="25,0 100,0 75,100 0,100" fill="white" />';
+  } else if (element.maskShape === "hexagon") {
+    shapeMarkup = '<polygon points="25,0 75,0 100,50 75,100 25,100 0,50" fill="white" />';
+  }
+
+  if (!shapeMarkup) {
+    return undefined;
+  }
+
+  return buildMaskDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+      <rect width="100%" height="100%" fill="black" />
+      ${shapeMarkup}
+    </svg>
+  `.trim());
+};
+
+const escapeSvgText = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const buildFreehandMaskPath = (
+  points: Array<{ x: number; y: number }>,
+  jointMode: CanvasElement["maskJointMode"] = "curved",
+) => {
+  if (points.length < 3) {
+    return "";
+  }
+
+  if (jointMode === "straight") {
+    return `${points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")} Z`;
+  }
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index % points.length];
+    const next = points[(index + 1) % points.length];
+    const midpointX = (current.x + next.x) / 2;
+    const midpointY = (current.y + next.y) / 2;
+    path += ` Q ${current.x} ${current.y} ${midpointX} ${midpointY}`;
+  }
+
+  return `${path} Z`;
+};
+
+const buildTextMaskImage = (
+  element: CanvasElement,
+  width: number,
+  height: number,
+  scale: number,
+) => {
+  const text = (element.maskText || "").trim();
+  if (!text) {
+    return undefined;
+  }
+
+  const align = element.maskTextAlign ?? "center";
+  const x = align === "left" ? width * 0.08 : align === "right" ? width * 0.92 : width * 0.5;
+  const textAnchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+  const fontSize = clamp((element.maskTextFontSize ?? 110) * scale, 18, Math.max(18, height * 0.58));
+  const fontWeight = element.maskTextFontWeight ?? "700";
+  const fontStyle = element.maskTextFontStyle ?? "normal";
+  const textDecoration = element.maskTextDecoration && element.maskTextDecoration !== "none"
+    ? element.maskTextDecoration
+    : undefined;
+  const letterSpacing = (element.maskTextLetterSpacing ?? 0) * scale;
+
+  const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">
+      <rect width="100%" height="100%" fill="black" />
+      <text
+        x="${x}"
+        y="${height * 0.55}"
+        fill="white"
+        text-anchor="${textAnchor}"
+        dominant-baseline="middle"
+        font-family="${escapeSvgText(element.maskTextFontFamily || "Archivo Black")}" 
+        font-size="${fontSize}"
+        font-weight="${fontWeight}"
+        font-style="${fontStyle}"
+        letter-spacing="${letterSpacing}"
+        ${textDecoration ? `text-decoration="${textDecoration}"` : ""}
+      >${escapeSvgText(text.replace(/\r?\n/g, " "))}</text>
+    </svg>
+  `.trim();
+
+  return buildMaskDataUrl(svgMarkup);
+};
+
+const buildFreehandMaskImage = (element: CanvasElement) => {
+  if ((element.maskFreehandPoints?.length ?? 0) < 3) {
+    return undefined;
+  }
+
+  const path = buildFreehandMaskPath(element.maskFreehandPoints ?? [], element.maskJointMode);
+  if (!path) {
+    return undefined;
+  }
+
+  const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+      <rect width="100%" height="100%" fill="black" />
+      <path d="${path}" fill="white" />
+    </svg>
+  `.trim();
+
+  return buildMaskDataUrl(svgMarkup);
+};
+
+const getImageMaskStyles = (
+  element: CanvasElement,
+  width: number,
+  height: number,
+  scale: number,
+): React.CSSProperties => {
+  const mode = getActiveImageMaskMode(element);
+
+  const maskImage =
+    mode === "shape"
+      ? buildShapeMaskImage(element)
+      : mode === "text"
+      ? buildTextMaskImage(element, width, height, scale)
+      : mode === "freehand"
+      ? buildFreehandMaskImage(element)
+      : undefined;
+
+  if (!maskImage) {
+    return {};
+  }
+
+  const maskPosition = `${getMaskPositionValue(element.maskPositionX)}% ${getMaskPositionValue(element.maskPositionY)}%`;
+  const maskScale = `${getMaskScaleValue(element, mode)}% ${getMaskScaleValue(element, mode)}%`;
+
+  return {
+    WebkitMaskImage: `url("${maskImage}")`,
+    maskImage: `url("${maskImage}")`,
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskPosition: maskPosition,
+    maskPosition,
+    WebkitMaskSize: maskScale,
+    maskSize: maskScale,
+  };
+};
+
 const getEffectBuffer = (element: CanvasElement, isMobile: boolean) => {
   const effect = element.effectProps;
   if (!effect) return 12;
@@ -664,41 +872,88 @@ export const LayerEffectOverlay: React.FC<LayerEffectOverlayProps> = ({
                   )}
                 </div>
               ) : element.type === "image" && element.src ? (
-                <div
-                  style={{
-                    width: baseWidth,
-                    height: baseHeight,
-                    overflow: "hidden",
-                    borderRadius: getImageBorderRadius(element, scale),
-                    clipPath: getImageClipPath(element),
-                    border:
-                      (element.borderWidth ?? 0) > 0
-                        ? `${(element.borderWidth ?? 0) * scale}px solid ${element.borderColor || "#ffffff"}`
-                        : undefined,
-                    boxSizing: "border-box",
-                    background: "transparent",
-                    mixBlendMode: effect.blendMode,
-                  }}
-                >
-                  <img
-                    src={element.src}
-                    alt=""
-                    draggable={false}
-                    style={{
-                      width: baseWidth,
-                      height: baseHeight,
-                      objectFit: "cover",
-                      borderRadius: getImageBorderRadius(element, scale),
-                      display: "block",
-                      transform: "translateZ(0)",
-                      willChange: "transform, filter",
-                      userSelect: "none",
-                      WebkitUserDrag: "none",
-                      filter: "var(--image-adjustment-filter)",
-                      ["--image-adjustment-filter" as string]: getImageFilterString(element),
-                    } as React.CSSProperties}
-                  />
-                </div>
+                (() => {
+                  const activeMaskMode = getActiveImageMaskMode(element);
+                  const maskStyles = getImageMaskStyles(element, baseWidth, baseHeight, scale);
+                  const imageFilter = getImageFilterString(element);
+                  const baseImageFilter = joinCssFilters(
+                    imageFilter,
+                    activeMaskMode !== "none" && element.maskColorPop && !element.maskInvert
+                      ? "grayscale(100%)"
+                      : undefined,
+                  );
+                  const maskedImageFilter = joinCssFilters(
+                    imageFilter,
+                    activeMaskMode !== "none" && element.maskColorPop && element.maskInvert
+                      ? "grayscale(100%)"
+                      : undefined,
+                  );
+                  const sharedImageStyle: React.CSSProperties = {
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                    transform: "translateZ(0)",
+                    willChange: "transform, filter",
+                    userSelect: "none",
+                    WebkitUserDrag: "none",
+                  };
+
+                  return (
+                    <div
+                      style={{
+                        position: "relative",
+                        width: baseWidth,
+                        height: baseHeight,
+                        overflow: "hidden",
+                        borderRadius: activeMaskMode === "none" ? getImageBorderRadius(element, scale) : undefined,
+                        border:
+                          activeMaskMode === "none" && (element.borderWidth ?? 0) > 0
+                            ? `${(element.borderWidth ?? 0) * scale}px solid ${element.borderColor || "#ffffff"}`
+                            : undefined,
+                        boxSizing: "border-box",
+                        background: "transparent",
+                        mixBlendMode: effect.blendMode,
+                      }}
+                    >
+                      {activeMaskMode !== "none" && element.maskColorPop ? (
+                        <img
+                          src={element.src}
+                          alt=""
+                          draggable={false}
+                          style={{
+                            ...sharedImageStyle,
+                            filter: baseImageFilter,
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        style={{
+                          position: activeMaskMode === "none" ? "relative" : "absolute",
+                          inset: 0,
+                          overflow: "hidden",
+                          ...maskStyles,
+                          border:
+                            activeMaskMode === "shape" && (element.borderWidth ?? 0) > 0
+                              ? `${(element.borderWidth ?? 0) * scale}px solid ${element.borderColor || "#ffffff"}`
+                              : undefined,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <img
+                          src={element.src}
+                          alt=""
+                          draggable={false}
+                          style={{
+                            ...sharedImageStyle,
+                            borderRadius: activeMaskMode === "none" ? getImageBorderRadius(element, scale) : undefined,
+                            filter: activeMaskMode === "none" ? imageFilter : maskedImageFilter,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()
               ) : null}
             </div>
           );

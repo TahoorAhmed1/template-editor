@@ -1445,13 +1445,7 @@ const TextPanel: React.FC<{
             active
             onClick={() => setIsFancyComposerOpen(true)}
           />
-          <ToolListItem
-            icon={<Captions size={28} strokeWidth={1.6} />}
-            title="Subtitles"
-            subtitle="Add subtitles to your design"
-            onClick={() => addText("subtitle")}
-          />
-          <div className="mx-4 border-t border-[#e5e7eb]" />
+      
           {/* <ToolListItem
             icon={<Clapperboard size={28} strokeWidth={1.6} />}
             title="Slideshow"

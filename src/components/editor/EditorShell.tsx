@@ -183,7 +183,24 @@ export interface CanvasElement {
   tintEnabled?: boolean;
   gammaEnabled?: boolean;
   roundnessEnabled?: boolean;
-  maskShape?: "none" | "circle" | "rounded" | "triangle" | "star" | "heart";
+  maskMode?: "shape" | "text" | "freehand";
+  maskShape?: "none" | "circle" | "rounded" | "triangle" | "star" | "heart" | "half-circle" | "oval" | "right-triangle" | "parallelogram" | "hexagon";
+  maskInvert?: boolean;
+  maskColorPop?: boolean;
+  maskJointMode?: "straight" | "curved";
+  maskText?: string;
+  maskTextFontFamily?: string;
+  maskTextFontSize?: number;
+  maskTextFontWeight?: "400" | "700";
+  maskTextFontStyle?: "normal" | "italic";
+  maskTextDecoration?: "none" | "underline" | "line-through";
+  maskTextAlign?: "left" | "center" | "right" | "justify";
+  maskTextLineHeight?: number;
+  maskTextLetterSpacing?: number;
+  maskPositionX?: number;
+  maskPositionY?: number;
+  maskScale?: number;
+  maskFreehandPoints?: Array<{ x: number; y: number }>;
   animation?: {
     type: "bounce" | "slide" | "fade" | "scale" | "rotate";
     duration: number;

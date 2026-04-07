@@ -31,6 +31,7 @@ import type {
   ToolType,
   ActiveTool,
   CanvasElement,
+  CanvasBackgroundValue,
   EditorMode,
   CanvasSizePreset,
   DrawSettings,
@@ -63,7 +64,7 @@ interface MobileBottomDockProps {
   selectedElement: CanvasElement | null;
   mode: EditorMode;
   canvasSize: CanvasSizePreset;
-  canvasBackground: string;
+  canvasBackground: CanvasBackgroundValue;
   designTitle: string;
   gridEnabled: boolean;
   alignmentGuides: boolean;

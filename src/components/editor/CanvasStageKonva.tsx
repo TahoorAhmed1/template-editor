@@ -2099,7 +2099,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
       if (element.type === "text" && shape instanceof Konva.Text) {
         shape.on(stageDoubleActivateEvent, (e) => {
           e.cancelBubble = true;
-          startInlineEditing(element, shape);
+          startInlineEditingByElementId(element.id);
         });
       }
 
@@ -2515,7 +2515,7 @@ const CanvasStageComponent: React.FC<CanvasStageProps> = ({
     inlineEditor?.id,
     onSelectElement,
     onUpdateElement,
-    startInlineEditing,
+    startInlineEditingByElementId,
     getInlineEditorState,
     alignmentGuides,
     gridEnabled,
@@ -3590,6 +3590,32 @@ function areCanvasStagePropsEqual(prev: CanvasStageProps, next: CanvasStageProps
 
 export const CanvasStage = React.memo(CanvasStageComponent, areCanvasStagePropsEqual);
 
+function getTextGradientFillConfig(element: CanvasElement, width: number, height: number) {
+  const gradientColors = (element.textGradientColors || []).filter(
+    (color): color is string => typeof color === "string" && color.length > 0,
+  );
+
+  if (gradientColors.length < 2) {
+    return null;
+  }
+
+  const { start, end } = getSharedLinearGradientPoints(
+    element.textGradientAngle ?? 90,
+    width,
+    height,
+  );
+
+  return {
+    fillPriority: "linear-gradient" as const,
+    fillLinearGradientStartPoint: start,
+    fillLinearGradientEndPoint: end,
+    fillLinearGradientColorStops: gradientColors.flatMap((color, index, colors) => [
+      colors.length === 1 ? 0 : index / (colors.length - 1),
+      color,
+    ]),
+  };
+}
+
 function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.Node | null {
   try {
     const renderable = getRenderableLayer(element);
@@ -3646,9 +3672,15 @@ function createKonvaShape(element: CanvasElement, overlayHidden = false): Konva.
       const shadowOffsetX = usesGlow ? 0 : effect?.shadowOffsetX ?? 0;
       const shadowOffsetY = usesGlow ? 0 : effect?.shadowOffsetY ?? 0;
       const shadowOpacity = usesGlow ? 1 : effect?.shadowOpacity ?? 0;
+      const textGradientFill = getTextGradientFillConfig(
+        renderable,
+        effectiveWidth,
+        textNodeHeight,
+      );
 
       return new Konva.Text({
         ...baseConfig,
+        ...textGradientFill,
         listening: true,
         name: "selectable-text",
         width: effectiveWidth,

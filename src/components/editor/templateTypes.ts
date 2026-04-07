@@ -19,6 +19,19 @@ export interface TemplateViewportState {
   mobilePan?: TemplateViewportPoint;
 }
 
+export type TemplateCanvasBackground =
+  | string
+  | { type: "solid"; color: string }
+  | { type: "linear"; colors: [string, string]; angleDeg: number }
+  | { type: "radial"; colors: [string, string] }
+  | {
+      type: "image";
+      src: string;
+      fit?: "cover" | "contain" | "stretch";
+      opacity?: number;
+      blur?: number;
+    };
+
 export interface TemplateCanvasPreset {
   label: string;
   description?: string;
@@ -36,7 +49,7 @@ export interface TemplateJson {
   canvasPreset?: TemplateCanvasPreset;
   lockedElementIds?: string[];
   thumbnailDataUrl?: string;
-  canvasBackground?: string;
+  canvasBackground?: TemplateCanvasBackground;
   viewportState?: TemplateViewportState;
 }
 
